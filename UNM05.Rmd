@@ -1,0 +1,1224 @@
+---
+title: "UNM05"
+output: pdf_document
+date: "2023-07-03"
+---
+
+```{r setup, include = FALSE}
+library(tidyverse)
+library(afex)
+library(BayesFactor)
+library(apa)
+library(emmeans)
+library("writexl")
+load("C:/Users/munizdie/OneDrive - Lancaster University/Experiments/UNM05_analysis/UNM05_proc_data.RData")
+
+# function to force scientific formatting of numbers (used for large BFs)
+changeSciNot <- function(n) {
+  output <- format(n, scientific = TRUE, digits = 2) #Transforms the number into scientific notation even if small
+  output <- sub("e", "x10^", output) #Replace e with 10^
+  output <- sub("\\+0?", "", output) #Remove + symbol and leading zeros on exponent, if > 1
+  output <- sub("-0?", "-", output) #Leaves - symbol but removes leading zeros on exponent, if < 1
+  output <- paste0(output,"^")
+  # output = strsplit(output, "^", fixed = TRUE)
+  # output = paste0(output[[1]][1],"^", output[[1]][2], "^")
+  output
+}
+
+# function to extract and report BFs with error %s
+report_BF_and_error <- function(BF_in, sci_not = TRUE, hyp = "alt"){
+  
+  if (hyp == "alt") {
+    BF_notation = "BF~10~ = "
+  } else if (hyp == "null") {
+    BF_notation = "BF~01~ = "
+  }
+  
+  if (sci_not == TRUE) {
+    BF_value = changeSciNot(extractBF(BF_in)$bf) # change to sci notation
+  } else {
+    BF_value = round(extractBF(BF_in)$bf,2) # otherwise round
+  }
+  
+  paste0(BF_notation, 
+         BF_value, 
+         " &plusmn; ", 
+         round(100*extractBF(BF_in)$error,2), 
+         "%")
+}
+
+```
+
+# Design
+
+This was a pilot experiment in which we aimed to find the most appropriate memory test to be used after a training in which two cues are presented in each trial followed by an outcome. Only one of the cues is predictive of the outcome, whereas the other appears the same amount of times with each of the two possible outcomes. Two tests where used, one followed by the other in all cases. Test 1 consisted in presenting one of the cues saw in the training phase and a dis tractor cue that was similar to this cue. The similarity of the distractor was manipulated between-subjects, with 3 possible conditions: very subtle (only one pair of balls swapped colors), subtle (two pairs of balls swapped colors) and no subtle (the distractor is a palette-swap of the target). In test 2, the target is presented with the distractors similar to the rest of the targets, one per trial.
+
++----------+----------+----------+
+| Training | Test1    | Test2    |
++==========+==========+==========+
+| AX - O1  | A vs *a* | A vs *b* |
+|          |          |          |
+|          |          | A vs *x* |
+|          |          |          |
+|          |          | A vs *y* |
++----------+----------+----------+
+| AY - O1  | B vs *b* | B vs *a* |
+|          |          |          |
+|          |          | B vs *x* |
+|          |          |          |
+|          |          | B vs *y* |
++----------+----------+----------+
+| BX - 02  | X vs *x* | X vs *a* |
+|          |          |          |
+|          |          | X vs *b* |
+|          |          |          |
+|          |          | X vs *y* |
++----------+----------+----------+
+| BY - O2  | Y vs *y* | Y vs *a* |
+|          |          |          |
+|          |          | Y vs *b* |
+|          |          |          |
+|          |          | Y vs *x* |
++----------+----------+----------+
+
+# All Data
+
+## Training phase
+
+```{r, echo = FALSE}
+#Plot Training accuracy
+training$session <- as.factor(training$session)
+MA_training <- training[complete.cases(training$correct_answer), ] %>%
+  group_by(block) %>%
+  summarise(mean_accuracy = mean(correct_answer, na.rm = TRUE), 
+            sd_accuracy = sd(correct_answer, na.rm = TRUE)/sqrt(length(correct_answer)))
+ggplot(MA_training) +
+  geom_point(mapping = aes(x = block, y = mean_accuracy)) +
+  geom_line(mapping = aes(x = block, y = mean_accuracy)) +
+  geom_errorbar(aes(x= block, y = mean_accuracy, ymin = mean_accuracy-sd_accuracy, ymax = mean_accuracy+sd_accuracy), color = "black", width=.1,position=position_dodge(0.05)) +
+  labs(title = "Mean accuracy for the 4 blocks of the training phase")
+```
+
+```{r, include = FALSE}
+#some t test to check that responding is significantly higher than chance
+mean_training <- training %>%
+  group_by(pNum) %>%
+   summarise(mean_response = mean(correct_answer, na.rm = TRUE))
+t_mean_training <- t.test(mean_training, mu = .5, alternative = "greater") 
+print (t_mean_training)
+```
+
+One-sample t-test indicates that mean responding in the training phase was significantly higher than 0.5, that is, chance level, `r t_apa(t_mean_training)`.
+
+```{r, include=FALSE}
+#ANOVA
+resp <- training %>%
+  group_by (pNum, block) %>%
+  summarise(mean_response = mean(correct_answer, na.rm = TRUE))
+resp$block <- factor(resp$block)
+resp$pNum <- factor(resp$pNum)
+ANOVA_resp <- aov_car(formula = mean_response ~ Error(pNum/block), data = resp)
+print(ANOVA_resp)
+```
+
+```{r, include=FALSE}
+bay_ANOVA_resp <- anovaBF(formula = mean_response ~ block + pNum,
+        data = data.frame(resp),
+        whichRandom = "pNum")
+print(bay_ANOVA_resp)
+```
+
+As expected, subjects showed rapid learning, reaching an accuracy of around .875 at the end of the training phase. This was confirmed by a repeated measures ANOVA that found a significant effect of the block (`r apa(ANOVA_resp, effect = "block")`) and moderate bayesian evidence towards the alternative hypothesis (`r report_BF_and_error(bay_ANOVA_resp[1])`).
+
+## Test1
+
+### Accuracy
+
+```{r, echo = FALSE}
+#plot test1 accuracy
+m_acc_test1 <- test1 %>%
+  group_by(cue_type) %>%
+  summarise(mean_acc = mean(acc, na.rm = TRUE), 
+            sd_acc = sd(acc, na.rm = TRUE)/sqrt(length(acc)))
+ggplot(data = m_acc_test1) +
+  geom_col(mapping = aes(x = cue_type, y = mean_acc)) +
+  geom_errorbar(aes(x = cue_type, y= mean_acc, ymin = mean_acc - sd_acc, ymax = mean_acc + sd_acc)) +
+  coord_cartesian(ylim = c(0, 1))+
+  scale_x_discrete (name = "Type of test") +
+  scale_y_continuous(name = "Accuracy") +
+  labs(title = "Mean accuracy for each type of cue in test1 phase")
+```
+
+```{r, include=FALSE}
+#ANOVA accuracy
+acc_test1 <- test1 %>%
+  group_by (pNum, session, predictiveness) %>%
+  summarise(acc = mean(acc, na.rm = TRUE))
+acc_test1$predictiveness <- factor(acc_test1$predictiveness)
+acc_test1$session <- factor(acc_test1$session)
+acc_test1$pNum <- factor(acc_test1$pNum)
+ANOVA_acc_test1 <- aov_car(formula = acc ~ session + Error(pNum*predictiveness), data = acc_test1)
+print(ANOVA_acc_test1)
+```
+
+```{r, include=FALSE}
+bay_ANOVA_acc_test1 <- anovaBF(formula = acc ~ session*predictiveness + pNum,
+        data = data.frame(acc_test1),
+        whichRandom = "pNum")
+print(bay_ANOVA_acc_test1)
+```
+
+```{r, include=FALSE}
+bay_ANOVA_acc_test1_interaction <- bay_ANOVA_acc_test1[4]/bay_ANOVA_acc_test1[3]
+print(bay_ANOVA_acc_test1_interaction)
+```
+
+Except for those that did the very subtle test, all subjects had lower accuracy for the non predictive vs the predictive targets. However, there were no significant differences due to the type of test (`r apa(ANOVA_acc_test1, effect = "session")`), the predictiveness of the target (`r apa(ANOVA_acc_test1, effect = "predictiveness")`) nor the interaction between them (`r apa(ANOVA_acc_test1, effect = "session:predictiveness")`). In all cases, bayesian evidence for the null hypotesis was either anecdotal or moderate (`r report_BF_and_error(bay_ANOVA_acc_test1[1])`, `r report_BF_and_error(bay_ANOVA_acc_test1[2])`, `r report_BF_and_error(bay_ANOVA_acc_test1_interaction[1])`, respectively).
+
+### Memory score
+
+```{r, echo = FALSE}
+#plot test mem_score
+m_mem_test1 <- test1 %>%
+  group_by(cue_type) %>%
+  summarise(mean_mem_score = mean(mem_score, na.rm = TRUE), 
+            sd_mem_score = sd(mem_score, na.rm = TRUE)/sqrt(length(mem_score)))
+ggplot(data = m_mem_test1) +
+  geom_col(mapping = aes(x = cue_type, y = mean_mem_score)) +
+  geom_errorbar(aes(x = cue_type, y= mean_mem_score, ymin = mean_mem_score - sd_mem_score, ymax = mean_mem_score + sd_mem_score)) +
+  coord_cartesian(ylim = c(0, 10))+
+  scale_x_discrete (name = "Type of cue") +
+  scale_y_continuous(name = "Memory score") +
+  labs(title = "Mean memory score for each type of cue in test1 phase")
+```
+
+```{r, include=FALSE}
+#ANOVA mem_score
+mem_score_test1 <- test1 %>%
+  group_by (pNum, session, predictiveness) %>%
+  summarise(memory_score = mean(mem_score, na.rm = TRUE))
+mem_score_test1$predictiveness <- factor(mem_score_test1$predictiveness)
+mem_score_test1$session <- factor(mem_score_test1$session)
+mem_score_test1$pNum <- factor(mem_score_test1$pNum)
+ANOVA_mem_score_test1 <- aov_car(formula = memory_score ~ session + Error(pNum*predictiveness), data = mem_score_test1)
+print(ANOVA_mem_score_test1)
+```
+
+```{r, include=FALSE}
+bay_ANOVA_mem_score_test1 <- anovaBF(formula = memory_score ~ session*predictiveness + pNum,
+        data = data.frame(mem_score_test1),
+        whichRandom = "pNum")
+print(bay_ANOVA_mem_score_test1)
+```
+
+```{r, include=FALSE}
+bay_ANOVA_mem_score_test1_interaction <-  bay_ANOVA_mem_score_test1[4]/bay_ANOVA_mem_score_test1[3]
+print(bay_ANOVA_mem_score_test1_interaction)
+```
+
+Again, except for those that did the very subtle test, all subjects had lower accuracy for the non predictive vs the precitive targets. However, there are no significant differences (Type of test: `r apa(ANOVA_mem_score_test1, effect = "session")`, Predictiveness: `r apa(ANOVA_mem_score_test1, effect = "predictiveness")`, interaction; `r apa(ANOVA_mem_score_test1, effect = "session:predictiveness")`) and the bayesian evidence is mild (`r report_BF_and_error(bay_ANOVA_mem_score_test1[1])`, `r report_BF_and_error(bay_ANOVA_mem_score_test1[2])`, `r report_BF_and_error(bay_ANOVA_mem_score_test1_interaction[1])`, respectively).
+
+### Corrected memory score
+
+```{r, echo = FALSE}
+#plot test mem_score but take out the errors
+c_test1 <- filter(test1, acc == 1)
+c_m_mem_test1 <- c_test1 %>%
+  group_by(cue_type) %>%
+  summarise(mean_mem_score = mean(mem_score, na.rm = TRUE), 
+            sd_mem_score = sd(mem_score, na.rm = TRUE)/sqrt(length(mem_score)))
+ggplot(data = c_m_mem_test1) +
+  geom_col(mapping = aes(x = cue_type, y = mean_mem_score)) +
+  geom_errorbar(aes(x = cue_type, y= mean_mem_score, ymin = mean_mem_score - sd_mem_score, ymax = mean_mem_score + sd_mem_score)) +
+  coord_cartesian(ylim = c(0, 10))+
+  scale_x_discrete (name = "Type of cue") +
+  scale_y_continuous(name = "Memory score") +
+  labs(title = "Mean corrected memory score for each type of cue in test1 phase")
+```
+
+```{r, include=FALSE}
+#ANOVA mem_score
+c_mem_score_test1 <- c_test1 %>%
+  group_by (pNum, session, predictiveness) %>%
+  summarise(mem_score = mean(mem_score, na.rm = TRUE))
+c_mem_score_test1$predictiveness <- factor(c_mem_score_test1$predictiveness)
+c_mem_score_test1$session <- factor(c_mem_score_test1$session)
+c_mem_score_test1$pNum <- factor(c_mem_score_test1$pNum)
+c_ANOVA_mem_score_test1 <- aov_car(formula = mem_score ~ session + Error(pNum*predictiveness), data = c_mem_score_test1)
+print(c_ANOVA_mem_score_test1)
+```
+
+```{r, include=FALSE}
+c_bay_ANOVA_mem_score_test1 <- anovaBF(formula = mem_score ~ session*predictiveness + pNum,
+        data = data.frame(c_mem_score_test1),
+        whichRandom = "pNum")
+print(c_bay_ANOVA_mem_score_test1)
+```
+
+```{r, include=FALSE}
+c_bay_ANOVA_mem_score_test1_interaction <- c_bay_ANOVA_mem_score_test1[4]/c_bay_ANOVA_mem_score_test1[3]
+print(c_bay_ANOVA_mem_score_test1_interaction)
+```
+
+When only hits are taken into account in test 1, memory score is corrected in test 1, there is a significant effect of predictiveness (`r apa(c_ANOVA_mem_score_test1, effect = "predictiveness")`), but the bayesian evidence is anecdotal (`r report_BF_and_error(c_bay_ANOVA_mem_score_test1[2])`. However, there were no significant effects of the type of test (`r apa(c_ANOVA_mem_score_test1, effect = "session")`, `r report_BF_and_error(c_bay_ANOVA_mem_score_test1[1])`) nor the interaction (`r apa(c_ANOVA_mem_score_test1, effect = "session")`, `r report_BF_and_error(c_bay_ANOVA_mem_score_test1[1])`).
+
+## Test2
+
+### Accuracy
+
+```{r, echo=FALSE}
+#plot test accuracy
+m_acc_test2 <- test2 %>%
+  group_by(cue_type) %>%
+  summarise(mean_acc = mean(acc, na.rm = TRUE), 
+            sd_acc = sd(acc, na.rm = TRUE)/sqrt(length(acc)))
+ggplot(data = m_acc_test2) +
+  geom_col(mapping = aes(x = cue_type, y = mean_acc)) +
+  geom_errorbar(aes(x = cue_type, y= mean_acc, ymin = mean_acc - sd_acc, ymax = mean_acc + sd_acc)) +
+  coord_cartesian(ylim = c(0, 1))+
+  scale_x_discrete (name = "Type of cue") +
+  scale_y_continuous(name = "Accuracy") +
+  labs(title = "Mean accuracy for each type of cue in test2 phase")
+```
+
+```{r, include=FALSE}
+#ANOVA accuracy
+acc_test2 <- test2 %>%
+  group_by (pNum, session, predictiveness) %>%
+  summarise(acc = mean(acc, na.rm = TRUE))
+acc_test2$predictiveness <- factor(acc_test2$predictiveness)
+acc_test2$session <- factor(acc_test2$session)
+acc_test2$pNum <- factor(acc_test2$pNum)
+ANOVA_acc_test2 <- aov_car(formula = acc ~ session + Error(pNum*predictiveness), data = acc_test2)
+print(ANOVA_acc_test2)
+```
+
+```{r, include=FALSE}
+bay_ANOVA_acc_test2 <- anovaBF(formula = acc ~ session*predictiveness + pNum,
+        data = data.frame(acc_test2),
+        whichRandom = "pNum")
+print(bay_ANOVA_acc_test2)
+```
+
+```{r, include=FALSE}
+bay_ANOVA_acc_test2_interaction <- bay_ANOVA_acc_test2[4]/bay_ANOVA_acc_test2[3]
+```
+
+There are no differences in accuracy in the second test, confirmed by the ANOVA (Type of test: `r apa(ANOVA_acc_test2, effect = "session")`, Predictiveness: `r apa(ANOVA_acc_test2, effect = "predictiveness")`, interaction; `r apa(ANOVA_acc_test2, effect = "session:predictiveness")`) and the bayesian evidence is anecdotal null (`r report_BF_and_error(bay_ANOVA_acc_test2[1])`, `r report_BF_and_error(bay_ANOVA_acc_test2[2])`, `r report_BF_and_error(bay_ANOVA_acc_test2_interaction[1])`, respectively).
+
+### Memory Score
+
+```{r, echo=FALSE}
+#plot test mem_score
+m_mem_test2 <- test2 %>%
+  group_by(cue_type) %>%
+  summarise(mean_mem_score = mean(mem_score, na.rm = TRUE), 
+            sd_mem_score = sd(mem_score, na.rm = TRUE)/sqrt(length(mem_score)))
+ggplot(data = m_mem_test2) +
+  geom_col(mapping = aes(x = cue_type, y = mean_mem_score)) +
+  geom_errorbar(aes(x = cue_type, y= mean_mem_score, ymin = mean_mem_score - sd_mem_score, ymax = mean_mem_score + sd_mem_score)) +
+  coord_cartesian(ylim = c(0, 10))+
+  scale_x_discrete (name = "Type of cue") +
+  scale_y_continuous(name = "Memory score") +
+  labs(title = "Mean memory score for each type of cue in test2 phase")
+```
+
+```{r, include=FALSE}
+#ANOVA mem_score
+mem_score_test2 <- test2 %>%
+  group_by (pNum, session, predictiveness) %>%
+  summarise(mem_score = mean(mem_score, na.rm = TRUE))
+mem_score_test2$predictiveness <- factor(mem_score_test2$predictiveness)
+mem_score_test2$session <- factor(mem_score_test2$session)
+mem_score_test2$pNum <- factor(mem_score_test2$pNum)
+ANOVA_mem_score_test2 <- aov_car(formula = mem_score ~ session + Error(pNum*predictiveness), data = mem_score_test2)
+print(ANOVA_mem_score_test2)
+```
+
+```{r, include=FALSE}
+bay_ANOVA_mem_score_test2 <- anovaBF(formula = mem_score ~ session*predictiveness + pNum,
+        data = data.frame(mem_score_test2),
+        whichRandom = "pNum")
+print(bay_ANOVA_mem_score_test2)
+```
+
+```{r, include=FALSE}
+bay_ANOVA_mem_score_test2_interaction <- bay_ANOVA_mem_score_test2[4]/bay_ANOVA_mem_score_test2[3]
+print(bay_ANOVA_mem_score_test2_interaction)
+```
+
+In test two, the memory score is always lower for the non-predictive targets, and the difference is bigger the more difficult the test is. However, there is only a significant effect of predictiveness, but the bayesian evidence is anecdotal (`r apa(ANOVA_mem_score_test2, effect = "predictiveness")`, `r report_BF_and_error(bay_ANOVA_mem_score_test2[2])`). There was not a significant effect of the session ((`r apa(ANOVA_mem_score_test2, effect = "session")`, `r report_BF_and_error(bay_ANOVA_mem_score_test2[1])`) nor the SessionxPredictiveness interaction ((`r apa(ANOVA_mem_score_test2, effect = "session:predictiveness")`, `r report_BF_and_error(bay_ANOVA_mem_score_test2_interaction[1])`).
+
+### Corrected memory score
+
+```{r, echo=FALSE}
+#plot test2 mem_score but take out the errors
+c_test2 <- filter(test2, acc == 1)
+c_m_mem_test2 <- c_test2 %>%
+  group_by(cue_type) %>%
+  summarise(mean_mem_score = mean(mem_score, na.rm = TRUE), 
+            sd_mem_score = sd(mem_score, na.rm = TRUE)/sqrt(length(mem_score)))
+ggplot(data = c_m_mem_test2) +
+  geom_col(mapping = aes(x = cue_type, y = mean_mem_score)) +
+  geom_errorbar(aes(x = cue_type, y= mean_mem_score, ymin = mean_mem_score - sd_mem_score, ymax = mean_mem_score + sd_mem_score)) +
+  coord_cartesian(ylim = c(0, 10))+
+  scale_x_discrete (name = "Type of cue") +
+  scale_y_continuous(name = "Memory score") +
+  labs(title = "Figure 3", subtitle = "Mean memory score for each type of cue in test2 phase")
+```
+
+```{r, include=FALSE}
+#ANOVA mem_score
+c_mem_score_test2 <- c_test2 %>%
+  group_by (pNum, session, predictiveness) %>%
+  summarise(mem_score = mean(mem_score, na.rm = TRUE))
+c_mem_score_test2$predictiveness <- factor(c_mem_score_test2$predictiveness)
+c_mem_score_test2$session <- factor(c_mem_score_test2$session)
+c_mem_score_test2$pNum <- factor(c_mem_score_test2$pNum)
+c_ANOVA_mem_score_test2 <- aov_car(formula = mem_score ~ session + Error(pNum*predictiveness), data = c_mem_score_test2)
+print(c_ANOVA_mem_score_test2)
+```
+
+```{r, include=FALSE}
+c_bay_ANOVA_mem_score_test2 <- anovaBF(formula = mem_score ~ session*predictiveness + pNum,
+        data = data.frame(c_mem_score_test2),
+        whichRandom = "pNum")
+print(c_bay_ANOVA_mem_score_test2)
+```
+
+```{r, include=FALSE}
+c_bay_ANOVA_mem_score_test2_interaction <- c_bay_ANOVA_mem_score_test2[4]/c_bay_ANOVA_mem_score_test2[3]
+```
+
+In this case, there´s a clear effect of predictiveness, being the corrected memory score always lower in the non-predicitve targets (`r apa(c_ANOVA_mem_score_test2, effect = "predictiveness")`, `r report_BF_and_error(c_bay_ANOVA_mem_score_test2[2])`). Again, nor the session nor the interaction were significant (`r apa(c_ANOVA_mem_score_test2, effect = "session")`, `r report_BF_and_error(c_bay_ANOVA_mem_score_test2[1])`; `r apa(c_ANOVA_mem_score_test2, effect = "session:predictiveness")`, `r report_BF_and_error(c_bay_ANOVA_mem_score_test2_interaction[1])`).
+
+# Very subtle test
+
+## Test1
+
+### Accuracy
+
+```{r, echo=FALSE}
+test1_s1 <- filter(test1, session == 1)
+test2_s1 <- filter(test2, session == 1)
+#plot test accuracy
+m_acc_test1_s1 <- test1_s1 %>%
+  group_by(predictiveness) %>%
+  summarise(mean_acc = mean(acc, na.rm = TRUE), 
+            sd_acc = sd(acc, na.rm = TRUE)/sqrt(length(acc)))
+ggplot(data = m_acc_test1_s1) +
+  geom_col(mapping = aes(x = predictiveness, y = mean_acc)) +
+  geom_errorbar(aes(x = predictiveness, y= mean_acc, ymin = mean_acc - sd_acc, ymax = mean_acc + sd_acc)) +
+  coord_cartesian(ylim = c(0, 1))+
+  scale_x_discrete (name = "Predicitiveness") +
+  scale_y_continuous(name = "Accuracy") +
+  labs(title = "Mean accuracy in test1 phase for very subtle test")
+```
+
+```{r, include=FALSE}
+#t test accuracy
+acc_test1_s1 <- test1_s1 %>%
+  group_by (pNum, predictiveness) %>%
+  summarise(acc = mean(acc, na.rm = TRUE))
+# compute the difference
+d <- with(acc_test1_s1, 
+        acc[predictiveness == "non-predictive"] - acc[predictiveness == "predictive"])
+# Shapiro-Wilk normality test for the differences
+shapiro.test(d) # => p-value = 0.6141
+```
+
+```{r, include=FALSE}
+t.test_acc_test1_s1 <- t.test(acc ~ predictiveness, data = acc_test1_s1, paired = TRUE)
+print(t.test_acc_test1_s1)
+```
+
+```{r, include=FALSE}
+pred_acc_test1_s1 <- subset(acc_test1_s1,  predictiveness == "predictive", acc, drop = TRUE)
+nonpred_acc_test1_s1 <- subset(acc_test1_s1,  predictiveness == "non-predictive", acc, drop = TRUE)
+bay_t.test_acc_test1_s1 <-  ttestBF(pred_acc_test1_s1, nonpred_acc_test1_s1, paired = TRUE)
+print(bay_t.test_acc_test1_s1)
+```
+
+Accuracy is higher in the non-predicitve, but is not significant (`r apa(t.test_acc_test1_s1)`) and the bayesian evidence is not conclusive (`r report_BF_and_error(bay_t.test_acc_test1_s1[1])`).
+
+### Memory score
+
+```{r, echo=FALSE}
+#plot test mem_score
+m_mem_test1_s1 <- test1_s1 %>%
+  group_by(predictiveness) %>%
+  summarise(mean_mem_score = mean(mem_score, na.rm = TRUE), 
+            sd_mem_score = sd(mem_score, na.rm = TRUE)/sqrt(length(mem_score)))
+ggplot(data = m_mem_test1_s1) +
+  geom_col(mapping = aes(x = predictiveness, y = mean_mem_score)) +
+  geom_errorbar(aes(x = predictiveness, y= mean_mem_score, ymin = mean_mem_score - sd_mem_score, ymax = mean_mem_score + sd_mem_score)) +
+  coord_cartesian(ylim = c(0, 10))+
+  scale_x_discrete (name = "Type of cue") +
+  scale_y_continuous(name = "Memory score") +
+  labs(title = "Mean memory score in test1 phase for very subtle test")
+```
+
+```{r, include=FALSE}
+#t test mem_score
+mem_score_test1_s1 <- test1_s1 %>%
+  group_by (pNum, predictiveness) %>%
+  summarise(mem_score = mean(mem_score, na.rm = TRUE))
+# compute the difference
+d <- with(mem_score_test1_s1, 
+        mem_score[predictiveness == "non-predictive"] - mem_score[predictiveness == "predictive"])
+# Shapiro-Wilk normality test for the differences
+shapiro.test(d) # => p-value = 0.6141
+```
+
+```{r, include=FALSE}
+t.test_mem_score_test1_s1 <- t.test(mem_score ~ predictiveness, data = mem_score_test1_s1, paired = TRUE)
+print(t.test_mem_score_test1_s1)
+```
+
+```{r, include=FALSE}
+pred_mem_score_test1_s1 <- subset(mem_score_test1_s1,  predictiveness == "predictive", mem_score, drop = TRUE)
+nonpred_mem_score_test1_s1 <- subset(mem_score_test1_s1,  predictiveness == "non-predictive", mem_score, drop = TRUE)
+bay_t.test_mem_score_test1_s1 <-  ttestBF(pred_mem_score_test1_s1, nonpred_mem_score_test1_s1, paired = TRUE)
+print(bay_t.test_mem_score_test1_s1)
+```
+
+Memory score is higher in the non-predicitve, but is not significant(`r apa(t.test_mem_score_test1_s1)`) and the bayesian evidence is not conclusive (`r report_BF_and_error(bay_t.test_mem_score_test1_s1[1])`).
+
+### Corrected memory score
+
+```{r, echo=FALSE}
+#plot test mem_score but take out the errors
+c_test1_s1 <- filter(test1_s1, acc == 1)
+c_m_mem_test1_s1 <- c_test1_s1 %>%
+  group_by(cue_type) %>%
+  summarise(mean_mem_score = mean(mem_score, na.rm = TRUE), 
+            sd_mem_score = sd(mem_score, na.rm = TRUE)/sqrt(length(mem_score)))
+ggplot(data = c_m_mem_test1_s1) +
+  geom_col(mapping = aes(x = cue_type, y = mean_mem_score)) +
+  geom_errorbar(aes(x = cue_type, y= mean_mem_score, ymin = mean_mem_score - sd_mem_score, ymax = mean_mem_score + sd_mem_score)) +
+  coord_cartesian(ylim = c(0, 10))+
+  scale_x_discrete (name = "Type of cue") +
+  scale_y_continuous(name = "Memory score") +
+  labs(title = "Mean corrected memory score in test1 phase for the very subtle test")
+```
+
+```{r, include=FALSE}
+#t test mem_score
+c_mem_score_test1_s1 <- c_test1_s1 %>%
+  group_by (pNum, predictiveness) %>%
+  summarise(mem_score = mean(mem_score, na.rm = TRUE))
+p_pred_c_mem_score_test1_s1 <- subset(c_mem_score_test1_s1,  predictiveness == "predictive", c(pNum), drop = TRUE)
+p_nonpred_c_mem_score_test1_s1 <- subset(c_mem_score_test1_s1,  predictiveness == "non-predictive", pNum, drop = TRUE)
+c_mem_score_test1_s1 <- c_mem_score_test1_s1[c_mem_score_test1_s1$pNum %in% p_pred_c_mem_score_test1_s1,]
+c_mem_score_test1_s1 <- c_mem_score_test1_s1[c_mem_score_test1_s1$pNum %in% p_nonpred_c_mem_score_test1_s1,]
+# compute the difference
+d <- with(c_mem_score_test1_s1, 
+        mem_score[predictiveness == "non-predictive"] - mem_score[predictiveness == "predictive"])
+# Shapiro-Wilk normality test for the differences
+shapiro.test(d) # => p-value = 0.6141
+```
+
+```{r, include=FALSE}
+t.test_c_mem_score_test1_s1 <- t.test(mem_score ~ predictiveness, data = c_mem_score_test1_s1, paired = TRUE)
+print(t.test_c_mem_score_test1_s1)
+```
+
+```{r, include=FALSE}
+pred_c_mem_score_test1_s1 <- subset(c_mem_score_test1_s1,  predictiveness == "predictive", mem_score, drop = TRUE)
+nonpred_c_mem_score_test1_s1 <- subset(c_mem_score_test1_s1,  predictiveness == "non-predictive", mem_score, drop = TRUE)
+bay_t.test_c_mem_score_test1_s1 <-  ttestBF(pred_c_mem_score_test1_s1, nonpred_c_mem_score_test1_s1, paired = TRUE)
+print(bay_t.test_c_mem_score_test1_s1)
+```
+
+There are no significant differences in test 1 very subtle when the memory score is corrected (`r apa(t.test_c_mem_score_test1_s1)`, `r report_BF_and_error(bay_t.test_c_mem_score_test1_s1[1])`.
+
+## Test2
+
+### Accuracy
+
+```{r, echo=FALSE}
+#plot test accuracy
+m_acc_test2_s1 <- test2_s1 %>%
+  group_by(predictiveness) %>%
+  summarise(mean_acc = mean(acc, na.rm = TRUE), 
+            sd_acc = sd(acc, na.rm = TRUE)/sqrt(length(acc)))
+ggplot(data = m_acc_test2_s1) +
+  geom_col(mapping = aes(x = predictiveness, y = mean_acc)) +
+  geom_errorbar(aes(x = predictiveness, y= mean_acc, ymin = mean_acc - sd_acc, ymax = mean_acc + sd_acc)) +
+  coord_cartesian(ylim = c(0, 1))+
+  scale_x_discrete (name = "Type of cue") +
+  scale_y_continuous(name = "Accuracy") +
+  labs(title = "Mean accuracy in test2 phase for very subtle test")
+```
+
+```{r, include=FALSE}
+#t test accuracy
+acc_test2_s1 <- test2_s1 %>%
+  group_by (pNum, predictiveness) %>%
+  summarise(acc = mean(acc, na.rm = TRUE))
+# compute the difference
+d <- with(acc_test2_s1, 
+        acc[predictiveness == "non-predictive"] - acc[predictiveness == "predictive"])
+# Shapiro-Wilk normality test for the differences
+shapiro.test(d) # 
+```
+
+```{r, include=FALSE}
+t.test_acc_test2_s1 <- t.test(acc ~ predictiveness, data = acc_test2_s1, paired = TRUE)
+print(t.test_acc_test2_s1)
+```
+
+```{r, include=FALSE}
+pred_acc_test2_s1 <- subset(acc_test2_s1,  predictiveness == "predictive", acc, drop = TRUE)
+nonpred_acc_test2_s1 <- subset(acc_test2_s1,  predictiveness == "non-predictive", acc, drop = TRUE)
+bay_t.test_acc_test2_s1 <-  ttestBF(pred_acc_test2_s1, nonpred_acc_test2_s1, paired = TRUE)
+print(bay_t.test_acc_test2_s1)
+```
+
+In this case, accuracy is lower for the non-predictive targets, but the difference is not significant and the bayesian evidence is very mild (`r apa(t.test_acc_test2_s1)`, `r report_BF_and_error(bay_t.test_acc_test2_s1[1])`).
+
+### Memory score
+
+```{r, echo=FALSE}
+#plot test mem_score
+m_mem_test2_s1 <- test2_s1 %>%
+  group_by(predictiveness) %>%
+  summarise(mean_mem_score = mean(mem_score, na.rm = TRUE), 
+            sd_mem_score = sd(mem_score, na.rm = TRUE)/sqrt(length(mem_score)))
+ggplot(data = m_mem_test2_s1) +
+  geom_col(mapping = aes(x = predictiveness, y = mean_mem_score)) +
+  geom_errorbar(aes(x = predictiveness, y= mean_mem_score, ymin = mean_mem_score - sd_mem_score, ymax = mean_mem_score + sd_mem_score)) +
+  coord_cartesian(ylim = c(0, 10))+
+  scale_x_discrete (name = "Type of cue") +
+  scale_y_continuous(name = "Memory score") +
+  labs(title = "Mean memory score in test2 phase for very subtle test")
+```
+
+```{r, include=FALSE}
+#t test mem_score
+mem_score_test2_s1 <- test2_s1 %>%
+  group_by (pNum, predictiveness) %>%
+  summarise(mem_score = mean(mem_score, na.rm = TRUE))
+# compute the difference
+d <- with(mem_score_test2_s1, 
+        mem_score[predictiveness == "non-predictive"] - mem_score[predictiveness == "predictive"])
+# Shapiro-Wilk normality test for the differences
+shapiro.test(d) 
+```
+
+```{r, include=FALSE}
+t.test_mem_score_test2_s1 <- t.test(mem_score ~ predictiveness, data = mem_score_test2_s1, paired = TRUE)
+print(t.test_mem_score_test2_s1)
+```
+
+```{r, include=FALSE}
+pred_mem_score_test2_s1 <- subset(mem_score_test2_s1,  predictiveness == "predictive", mem_score, drop = TRUE)
+nonpred_mem_score_test2_s1 <- subset(mem_score_test2_s1,  predictiveness == "non-predictive", mem_score, drop = TRUE)
+bay_t.test_mem_score_test2_s1 <-  ttestBF(pred_mem_score_test2_s1, nonpred_mem_score_test2_s1, paired = TRUE)
+print(bay_t.test_mem_score_test2_s1)
+```
+
+Again, memory score is lower in the non-predicitive group. In this case, there are significant differences (`r apa(t.test_mem_score_test2_s1)`) and anecdotal positive bayesian evidence (`r report_BF_and_error(bay_t.test_mem_score_test2_s1[1])`).
+
+### Corrected memory score
+
+```{r, echo=FALSE}
+#plot test2 mem_score but take out the errors
+c_test2_s1 <- filter(test2_s1, acc == 1)
+c_m_mem_test2_s1 <- c_test2_s1 %>%
+  group_by(cue_type) %>%
+  summarise(mean_mem_score = mean(mem_score, na.rm = TRUE), 
+            sd_mem_score = sd(mem_score, na.rm = TRUE)/sqrt(length(mem_score)))
+ggplot(data = c_m_mem_test2_s1) +
+  geom_col(mapping = aes(x = cue_type, y = mean_mem_score)) +
+  geom_errorbar(aes(x = cue_type, y= mean_mem_score, ymin = mean_mem_score - sd_mem_score, ymax = mean_mem_score + sd_mem_score)) +
+  coord_cartesian(ylim = c(0, 10))+
+  scale_x_discrete (name = "Type of cue") +
+  scale_y_continuous(name = "Memory score") +
+  labs(title = "Figure 3", subtitle = "Mean corrected memory score in test2 phase for very subtle test")
+```
+
+```{r, include=FALSE}
+#t test mem_score
+c_mem_score_test2_s1 <- c_test2_s1 %>%
+  group_by (pNum, predictiveness) %>%
+  summarise(mem_score = mean(mem_score, na.rm = TRUE))
+p_pred_c_mem_score_test2_s1 <- subset(c_mem_score_test2_s1,  predictiveness == "predictive", c(pNum), drop = TRUE)
+p_nonpred_c_mem_score_test2_s1 <- subset(c_mem_score_test2_s1,  predictiveness == "non-predictive", pNum, drop = TRUE)
+c_mem_score_test2_s1 <- c_mem_score_test2_s1[c_mem_score_test2_s1$pNum %in% p_pred_c_mem_score_test2_s1,]
+c_mem_score_test2_s1 <- c_mem_score_test2_s1[c_mem_score_test2_s1$pNum %in% p_nonpred_c_mem_score_test2_s1,]
+# compute the difference
+d <- with(c_mem_score_test2_s1, 
+        mem_score[predictiveness == "non-predictive"] - mem_score[predictiveness == "predictive"])
+# Shapiro-Wilk normality test for the differences
+shapiro.test(d)
+```
+
+```{r, include=FALSE}
+wilcox_c_mem_score_test2_s1 <- wilcox.test(mem_score ~ predictiveness, data = c_mem_score_test2_s1, paired = TRUE)
+print(wilcox_c_mem_score_test2_s1)
+```
+
+```{r, include=FALSE}
+pred_c_mem_score_test2_s1 <- subset(c_mem_score_test2_s1,  predictiveness == "predictive", mem_score, drop = TRUE)
+nonpred_c_mem_score_test2_s1 <- subset(c_mem_score_test2_s1,  predictiveness == "non-predictive", mem_score, drop = TRUE)
+###can´t find the way of doing this because i can´t install_github("joereinhardt/BayesianFirstAid-Wilcoxon")
+#bay_wilcox_c_mem_score_test2_s1 <-  bayes.wilcox.test(pred_c_mem_score_test2_s1, nonpred_c_mem_score_test2_s1, paired = TRUE)
+#print
+bay_t.test_c_mem_score_test2_s1 <-  ttestBF(pred_c_mem_score_test2_s1, nonpred_c_mem_score_test2_s1, paired = TRUE)
+print(bay_t.test_c_mem_score_test2_s1)
+```
+
+In this case, there´s a clear effect of predictiveness, being the corrected memory score lower in the non-predicitve targets (*V* = `r  wilcox_c_mem_score_test2_s1[["statistic"]]`, *p* = `r wilcox_c_mem_score_test2_s1[["p.value"]]`, `r report_BF_and_error(bay_t.test_c_mem_score_test2_s1[1])`).
+
+# Subtle test
+
+## Test1
+
+### Accuracy
+
+```{r, echo=FALSE}
+test1_s2 <- filter(test1, session == 2)
+test2_s2 <- filter(test2, session == 2)
+#plot test accuracy
+m_acc_test1_s2 <- test1_s2 %>%
+  group_by(predictiveness) %>%
+  summarise(mean_acc = mean(acc, na.rm = TRUE), 
+            sd_acc = sd(acc, na.rm = TRUE)/sqrt(length(acc)))
+ggplot(data = m_acc_test1_s2) +
+  geom_col(mapping = aes(x = predictiveness, y = mean_acc)) +
+  geom_errorbar(aes(x = predictiveness, y= mean_acc, ymin = mean_acc - sd_acc, ymax = mean_acc + sd_acc)) +
+  coord_cartesian(ylim = c(0, 1))+
+  scale_x_discrete (name = "Predicitiveness") +
+  scale_y_continuous(name = "Accuracy") +
+  labs(title = "Mean accuracy in test1 phase for subtle test")
+```
+
+```{r, include=FALSE}
+#t test accuracy
+acc_test1_s2 <- test1_s2 %>%
+  group_by (pNum, predictiveness) %>%
+  summarise(acc = mean(acc, na.rm = TRUE))
+# compute the difference
+d <- with(acc_test1_s2, 
+        acc[predictiveness == "non-predictive"] - acc[predictiveness == "predictive"])
+# Shapiro-Wilk normality test for the differences
+shapiro.test(d)
+```
+
+```{r, include=FALSE}
+wilcox_acc_test1_s2 <- wilcox.test(acc ~ predictiveness, data = acc_test1_s2, paired = TRUE)
+print(wilcox_acc_test1_s2)
+```
+
+```{r, include=FALSE}
+pred_acc_test1_s2 <- subset(acc_test1_s2,  predictiveness == "predictive", acc, drop = TRUE)
+nonpred_acc_test1_s2 <- subset(acc_test1_s2,  predictiveness == "non-predictive", acc, drop = TRUE)
+bay_t.test_acc_test1_s2 <-  ttestBF(pred_acc_test1_s2, nonpred_acc_test1_s2, paired = TRUE)
+print(bay_t.test_acc_test1_s2)
+```
+
+There´s lower accuracy for the non-predictive, but there is no significant difference (*V* =`r  wilcox_acc_test1_s2[["statistic"]]`, *p* = `r wilcox_acc_test1_s2[["p.value"]]`, `r report_BF_and_error(bay_t.test_acc_test1_s2[1])`).
+
+### Memory score
+
+```{r, echo=FALSE}
+#plot test mem_score
+m_mem_test1_s2 <- test1_s2 %>%
+  group_by(predictiveness) %>%
+  summarise(mean_mem_score = mean(mem_score, na.rm = TRUE), 
+            sd_mem_score = sd(mem_score, na.rm = TRUE)/sqrt(length(mem_score)))
+ggplot(data = m_mem_test1_s2) +
+  geom_col(mapping = aes(x = predictiveness, y = mean_mem_score)) +
+  geom_errorbar(aes(x = predictiveness, y= mean_mem_score, ymin = mean_mem_score - sd_mem_score, ymax = mean_mem_score + sd_mem_score)) +
+  coord_cartesian(ylim = c(0, 10))+
+  scale_x_discrete (name = "Type of cue") +
+  scale_y_continuous(name = "Memory score") +
+  labs(title = "Mean memory score in test1 phase for subtle test")
+```
+
+```{r, include=FALSE}
+#t test mem_score
+mem_score_test1_s2 <- test1_s2 %>%
+  group_by (pNum, predictiveness) %>%
+  summarise(mem_score = mean(mem_score, na.rm = TRUE))
+# compute the difference
+d <- with(mem_score_test1_s2, 
+        mem_score[predictiveness == "non-predictive"] - mem_score[predictiveness == "predictive"])
+# Shapiro-Wilk normality test for the differences
+shapiro.test(d) # => p-value = 0.6141
+```
+
+```{r, include=FALSE}
+t.test_mem_score_test1_s2 <- t.test(mem_score ~ predictiveness, data = mem_score_test1_s2, paired = TRUE)
+print(t.test_mem_score_test1_s2)
+```
+
+```{r, include=FALSE}
+pred_mem_score_test1_s2 <- subset(mem_score_test1_s2,  predictiveness == "predictive", mem_score, drop = TRUE)
+nonpred_mem_score_test1_s2 <- subset(mem_score_test1_s2,  predictiveness == "non-predictive", mem_score, drop = TRUE)
+bay_t.test_mem_score_test1_s2 <-  ttestBF(pred_mem_score_test1_s2, nonpred_mem_score_test1_s2, paired = TRUE)
+print(bay_t.test_mem_score_test1_s2)
+```
+
+There´s lower memory score for the non-predictive, but there is no significant difference (`r apa(t.test_mem_score_test1_s2)`, `r report_BF_and_error(bay_t.test_mem_score_test1_s2[1])`).
+
+### Corrected memory score
+
+```{r, echo=FALSE}
+#plot test mem_score but take out the errors
+c_test1_s2 <- filter(test1_s2, acc == 1)
+c_m_mem_test1_s2 <- c_test1_s2 %>%
+  group_by(cue_type) %>%
+  summarise(mean_mem_score = mean(mem_score, na.rm = TRUE), 
+            sd_mem_score = sd(mem_score, na.rm = TRUE)/sqrt(length(mem_score)))
+ggplot(data = c_m_mem_test1_s2) +
+  geom_col(mapping = aes(x = cue_type, y = mean_mem_score)) +
+  geom_errorbar(aes(x = cue_type, y= mean_mem_score, ymin = mean_mem_score - sd_mem_score, ymax = mean_mem_score + sd_mem_score)) +
+  coord_cartesian(ylim = c(0, 10))+
+  scale_x_discrete (name = "Type of cue") +
+  scale_y_continuous(name = "Memory score") +
+  labs(title = "Mean corrected memory score in test1 phase for the very subtle test")
+```
+
+```{r, include=FALSE}
+#t test mem_score
+c_mem_score_test1_s2 <- c_test1_s2 %>%
+  group_by (pNum, predictiveness) %>%
+  summarise(mem_score = mean(mem_score, na.rm = TRUE))
+p_pred_c_mem_score_test1_s2 <- subset(c_mem_score_test1_s2,  predictiveness == "predictive", c(pNum), drop = TRUE)
+p_nonpred_c_mem_score_test1_s2 <- subset(c_mem_score_test1_s2,  predictiveness == "non-predictive", pNum, drop = TRUE)
+c_mem_score_test1_s2 <- c_mem_score_test1_s2[c_mem_score_test1_s2$pNum %in% p_pred_c_mem_score_test1_s2,]
+c_mem_score_test1_s2 <- c_mem_score_test1_s2[c_mem_score_test1_s2$pNum %in% p_nonpred_c_mem_score_test1_s2,]
+# compute the difference
+d <- with(c_mem_score_test1_s2, 
+        mem_score[predictiveness == "non-predictive"] - mem_score[predictiveness == "predictive"])
+# Shapiro-Wilk normality test for the differences
+shapiro.test(d)
+```
+
+```{r, include=FALSE}
+t.test_c_mem_score_test1_s2 <- t.test(mem_score ~ predictiveness, data = c_mem_score_test1_s2, paired = TRUE)
+print(t.test_c_mem_score_test1_s2)
+```
+
+```{r, include=FALSE}
+pred_c_mem_score_test1_s2 <- subset(c_mem_score_test1_s2,  predictiveness == "predictive", mem_score, drop = TRUE)
+nonpred_c_mem_score_test1_s2 <- subset(c_mem_score_test1_s2,  predictiveness == "non-predictive", mem_score, drop = TRUE)
+bay_t.test_c_mem_score_test1_s2 <-  ttestBF(pred_c_mem_score_test1_s2, nonpred_c_mem_score_test1_s2, paired = TRUE)
+print(bay_t.test_c_mem_score_test1_s2)
+```
+
+Responding is lower for the non-predictive targets, there are nearly significant differences but the bayesian test indicates anecdotal evidence for the alternative hypothesis (`r apa(t.test_c_mem_score_test1_s2)`, `r report_BF_and_error(bay_t.test_c_mem_score_test1_s2[1])`).
+
+## Test2
+
+### Accuracy
+
+```{r, echo=FALSE}
+#plot test accuracy
+m_acc_test2_s2 <- test2_s2 %>%
+  group_by(predictiveness) %>%
+  summarise(mean_acc = mean(acc, na.rm = TRUE), 
+            sd_acc = sd(acc, na.rm = TRUE)/sqrt(length(acc)))
+ggplot(data = m_acc_test2_s2) +
+  geom_col(mapping = aes(x = predictiveness, y = mean_acc)) +
+  geom_errorbar(aes(x = predictiveness, y= mean_acc, ymin = mean_acc - sd_acc, ymax = mean_acc + sd_acc)) +
+  coord_cartesian(ylim = c(0, 1))+
+  scale_x_discrete (name = "Type of cue") +
+  scale_y_continuous(name = "Accuracy") +
+  labs(title = "Mean accuracy in test2 phase for subtle test")
+```
+
+```{r, include=FALSE}
+#t test accuracy
+acc_test2_s2 <- test2_s2 %>%
+  group_by (pNum, predictiveness) %>%
+  summarise(acc = mean(acc, na.rm = TRUE))
+# compute the difference
+d <- with(acc_test2_s2, 
+        acc[predictiveness == "non-predictive"] - acc[predictiveness == "predictive"])
+# Shapiro-Wilk normality test for the differences
+shapiro.test(d) # 
+```
+
+```{r, include=FALSE}
+t.test_acc_test2_s2 <- t.test(acc ~ predictiveness, data = acc_test2_s2, paired = TRUE)
+print(t.test_acc_test2_s2)
+```
+
+```{r, include=FALSE}
+pred_acc_test2_s2 <- subset(acc_test2_s2,  predictiveness == "predictive", acc, drop = TRUE)
+nonpred_acc_test2_s2 <- subset(acc_test2_s2,  predictiveness == "non-predictive", acc, drop = TRUE)
+bay_t.test_acc_test2_s2 <-  ttestBF(pred_acc_test2_s2, nonpred_acc_test2_s2, paired = TRUE)
+print(bay_t.test_acc_test2_s2)
+```
+
+There is no significant difference (`r apa(t.test_acc_test2_s2)`, `r report_BF_and_error(bay_t.test_acc_test2_s2[1])`).
+
+### Memory score
+
+```{r, echo=FALSE}
+#plot test mem_score
+m_mem_test2_s2 <- test2_s2 %>%
+  group_by(predictiveness) %>%
+  summarise(mean_mem_score = mean(mem_score, na.rm = TRUE), 
+            sd_mem_score = sd(mem_score, na.rm = TRUE)/sqrt(length(mem_score)))
+ggplot(data = m_mem_test2_s2) +
+  geom_col(mapping = aes(x = predictiveness, y = mean_mem_score)) +
+  geom_errorbar(aes(x = predictiveness, y= mean_mem_score, ymin = mean_mem_score - sd_mem_score, ymax = mean_mem_score + sd_mem_score)) +
+  coord_cartesian(ylim = c(0, 10))+
+  scale_x_discrete (name = "Type of cue") +
+  scale_y_continuous(name = "Memory score") +
+  labs(title = "Mean memory score in test2 phase for subtle test")
+```
+
+```{r, include = FALSE}
+#t test mem_score
+mem_score_test2_s2 <- test2_s2 %>%
+  group_by (pNum, predictiveness) %>%
+  summarise(mem_score = mean(mem_score, na.rm = TRUE))
+# compute the difference
+d <- with(mem_score_test2_s2, 
+        mem_score[predictiveness == "non-predictive"] - mem_score[predictiveness == "predictive"])
+# Shapiro-Wilk normality test for the differences
+shapiro.test(d) 
+```
+
+```{r, include=FALSE}
+wilcox_mem_score_test2_s2 <- wilcox.test(mem_score ~ predictiveness, data = mem_score_test2_s2, paired = TRUE)
+print(wilcox_mem_score_test2_s2)
+```
+
+```{r, include=FALSE}
+pred_mem_score_test2_s2 <- subset(mem_score_test2_s2,  predictiveness == "predictive", mem_score, drop = TRUE)
+nonpred_mem_score_test2_s2 <- subset(mem_score_test2_s2,  predictiveness == "non-predictive", mem_score, drop = TRUE)
+bay_t.test_mem_score_test2_s2 <-  ttestBF(pred_mem_score_test2_s2, nonpred_mem_score_test2_s2, paired = TRUE)
+print(bay_t.test_mem_score_test2_s2)
+```
+
+There is no significant difference (*V* = `r  wilcox_mem_score_test2_s2[["statistic"]]`, *p* = `r wilcox_mem_score_test2_s2[["p.value"]]`, `r report_BF_and_error(bay_t.test_mem_score_test2_s2[1])`).
+
+### Corrected memory score
+
+```{r, echo=FALSE}
+#plot test2 mem_score but take out the errors
+c_test2_s2 <- filter(test2_s2, acc == 1)
+c_m_mem_test2_s2 <- c_test2_s2 %>%
+  group_by(cue_type) %>%
+  summarise(mean_mem_score = mean(mem_score, na.rm = TRUE), 
+            sd_mem_score = sd(mem_score, na.rm = TRUE)/sqrt(length(mem_score)))
+ggplot(data = c_m_mem_test2_s2) +
+  geom_col(mapping = aes(x = cue_type, y = mean_mem_score)) +
+  geom_errorbar(aes(x = cue_type, y= mean_mem_score, ymin = mean_mem_score - sd_mem_score, ymax = mean_mem_score + sd_mem_score)) +
+  coord_cartesian(ylim = c(0, 10))+
+  scale_x_discrete (name = "Type of cue") +
+  scale_y_continuous(name = "Memory score") +
+  labs(title = "Figure 3", subtitle = "Mean corrected memory score in test2 phase for very subtle test")
+```
+
+```{r, include=FALSE}
+#t test mem_score
+c_mem_score_test2_s2 <- c_test2_s2 %>%
+  group_by (pNum, predictiveness) %>%
+  summarise(mem_score = mean(mem_score, na.rm = TRUE))
+p_pred_c_mem_score_test2_s2 <- subset(c_mem_score_test2_s2,  predictiveness == "predictive", pNum, drop = TRUE)
+p_nonpred_c_mem_score_test2_s2 <- subset(c_mem_score_test2_s2,  predictiveness == "non-predictive", pNum, drop = TRUE)
+c_mem_score_test2_s2 <- c_mem_score_test2_s2[c_mem_score_test2_s2$pNum %in% p_pred_c_mem_score_test2_s2,]
+c_mem_score_test2_s2 <- c_mem_score_test2_s2[c_mem_score_test2_s2$pNum %in% p_nonpred_c_mem_score_test2_s2,]
+# compute the difference
+d <- with(c_mem_score_test2_s2, 
+        mem_score[predictiveness == "non-predictive"] - mem_score[predictiveness == "predictive"])
+# Shapiro-Wilk normality test for the differences
+shapiro.test(d)
+```
+
+```{r, include=FALSE}
+t.test_c_mem_score_test2_s2 <- t.test(mem_score ~ predictiveness, data = c_mem_score_test2_s2, paired = TRUE)
+print(t.test_c_mem_score_test2_s2)
+```
+
+```{r, include=FALSE}
+pred_c_mem_score_test2_s2 <- subset(c_mem_score_test2_s2,  predictiveness == "predictive", mem_score, drop = TRUE)
+nonpred_c_mem_score_test2_s2 <- subset(c_mem_score_test2_s2,  predictiveness == "non-predictive", mem_score, drop = TRUE)
+bay_t.test_c_mem_score_test2_s2 <-  ttestBF(pred_c_mem_score_test2_s2, nonpred_c_mem_score_test2_s2, paired = TRUE)
+print(bay_t.test_c_mem_score_test2_s2)
+```
+
+There´s lower memory score for the non-predictive, but there is no significant difference (`r apa(t.test_c_mem_score_test2_s2)`, `r report_BF_and_error(bay_t.test_c_mem_score_test2_s2[1])`).
+
+# No subtle test
+
+## Test1
+
+### Accuracy
+
+```{r, echo=FALSE}
+test1_s3 <- filter(test1, session == 3)
+test2_s3 <- filter(test2, session == 3)
+#plot test accuracy
+m_acc_test1_s3 <- test1_s3 %>%
+  group_by(predictiveness) %>%
+  summarise(mean_acc = mean(acc, na.rm = TRUE), 
+            sd_acc = sd(acc, na.rm = TRUE)/sqrt(length(acc)))
+ggplot(data = m_acc_test1_s3) +
+  geom_col(mapping = aes(x = predictiveness, y = mean_acc)) +
+  geom_errorbar(aes(x = predictiveness, y= mean_acc, ymin = mean_acc - sd_acc, ymax = mean_acc + sd_acc)) +
+  coord_cartesian(ylim = c(0, 1))+
+  scale_x_discrete (name = "Predicitiveness") +
+  scale_y_continuous(name = "Accuracy") +
+  labs(title = "Mean accuracy in test1 phase for no subtle test")
+```
+
+```{r, include=FALSE}
+#t test accuracy
+acc_test1_s3 <- test1_s3 %>%
+  group_by (pNum, predictiveness) %>%
+  summarise(acc = mean(acc, na.rm = TRUE))
+# compute the difference
+d <- with(acc_test1_s3, 
+        acc[predictiveness == "non-predictive"] - acc[predictiveness == "predictive"])
+# Shapiro-Wilk normality test for the differences
+shapiro.test(d)
+```
+
+```{r, include=FALSE}
+wilcox_acc_test1_s3 <- wilcox.test(acc ~ predictiveness, data = acc_test1_s3, paired = TRUE)
+print(wilcox_acc_test1_s3)
+```
+
+```{r, include=FALSE}
+pred_acc_test1_s3 <- subset(acc_test1_s3,  predictiveness == "predictive", acc, drop = TRUE)
+nonpred_acc_test1_s3 <- subset(acc_test1_s3,  predictiveness == "non-predictive", acc, drop = TRUE)
+bay_t.test_acc_test1_s3 <-  ttestBF(pred_acc_test1_s3, nonpred_acc_test1_s3, paired = TRUE)
+print(bay_t.test_acc_test1_s3)
+```
+
+There is no significant difference (*V*= `r  wilcox_acc_test1_s3[["statistic"]]`, *p* = `r wilcox_acc_test1_s3[["p.value"]]`, `r report_BF_and_error(bay_t.test_acc_test1_s3[1])`).
+
+### Memory score
+
+```{r, echo=FALSE}
+#plot test mem_score
+m_mem_test1_s3 <- test1_s3 %>%
+  group_by(predictiveness) %>%
+  summarise(mean_mem_score = mean(mem_score, na.rm = TRUE), 
+            sd_mem_score = sd(mem_score, na.rm = TRUE)/sqrt(length(mem_score)))
+ggplot(data = m_mem_test1_s3) +
+  geom_col(mapping = aes(x = predictiveness, y = mean_mem_score)) +
+  geom_errorbar(aes(x = predictiveness, y= mean_mem_score, ymin = mean_mem_score - sd_mem_score, ymax = mean_mem_score + sd_mem_score)) +
+  coord_cartesian(ylim = c(0, 10))+
+  scale_x_discrete (name = "Type of cue") +
+  scale_y_continuous(name = "Memory score") +
+  labs(title = "Mean memory score in test1 phase for no subtle test")
+```
+
+```{r, include=FALSE}
+#t test mem_score
+mem_score_test1_s3 <- test1_s3 %>%
+  group_by (pNum, predictiveness) %>%
+  summarise(mem_score = mean(mem_score, na.rm = TRUE))
+# compute the difference
+d <- with(mem_score_test1_s3, 
+        mem_score[predictiveness == "non-predictive"] - mem_score[predictiveness == "predictive"])
+# Shapiro-Wilk normality test for the differences
+shapiro.test(d)
+```
+
+```{r, include=FALSE}
+wilcox_mem_score_test1_s3 <- wilcox.test(mem_score ~ predictiveness, data = mem_score_test1_s3, paired = TRUE)
+print(wilcox_mem_score_test1_s3)
+```
+
+```{r, include=FALSE}
+pred_mem_score_test1_s3 <- subset(mem_score_test1_s3,  predictiveness == "predictive", mem_score, drop = TRUE)
+nonpred_mem_score_test1_s3 <- subset(mem_score_test1_s3,  predictiveness == "non-predictive", mem_score, drop = TRUE)
+bay_t.test_mem_score_test1_s3 <-  ttestBF(pred_mem_score_test1_s3, nonpred_mem_score_test1_s3, paired = TRUE)
+print(bay_t.test_mem_score_test1_s3)
+```
+
+There is no significant difference (*V* = `r  wilcox_mem_score_test1_s3[["statistic"]]`, *p* = `r wilcox_mem_score_test1_s3[["p.value"]]`, `r report_BF_and_error(bay_t.test_mem_score_test1_s3[1])`).
+
+### Corrected memory score
+
+```{r, echo=FALSE}
+#plot test mem_score but take out the errors
+c_test1_s3 <- filter(test1_s3, acc == 1)
+c_m_mem_test1_s3 <- c_test1_s3 %>%
+  group_by(cue_type) %>%
+  summarise(mean_mem_score = mean(mem_score, na.rm = TRUE), 
+            sd_mem_score = sd(mem_score, na.rm = TRUE)/sqrt(length(mem_score)))
+ggplot(data = c_m_mem_test1_s3) +
+  geom_col(mapping = aes(x = cue_type, y = mean_mem_score)) +
+  geom_errorbar(aes(x = cue_type, y= mean_mem_score, ymin = mean_mem_score - sd_mem_score, ymax = mean_mem_score + sd_mem_score)) +
+  coord_cartesian(ylim = c(0, 10))+
+  scale_x_discrete (name = "Type of cue") +
+  scale_y_continuous(name = "Memory score") +
+  labs(title = "Mean corrected memory score in test1 phase for the very subtle test")
+```
+
+```{r, include=FALSE}
+#t test mem_score
+c_mem_score_test1_s3 <- c_test1_s3 %>%
+  group_by (pNum, predictiveness) %>%
+  summarise(mem_score = mean(mem_score, na.rm = TRUE))
+p_pred_c_mem_score_test1_s3 <- subset(c_mem_score_test1_s3,  predictiveness == "predictive", c(pNum), drop = TRUE)
+p_nonpred_c_mem_score_test1_s3 <- subset(c_mem_score_test1_s3,  predictiveness == "non-predictive", pNum, drop = TRUE)
+c_mem_score_test1_s3 <- c_mem_score_test1_s3[c_mem_score_test1_s3$pNum %in% p_pred_c_mem_score_test1_s3,]
+c_mem_score_test1_s3 <- c_mem_score_test1_s3[c_mem_score_test1_s3$pNum %in% p_nonpred_c_mem_score_test1_s3,]
+# compute the difference
+d <- with(c_mem_score_test1_s3, 
+        mem_score[predictiveness == "non-predictive"] - mem_score[predictiveness == "predictive"])
+# Shapiro-Wilk normality test for the differences
+shapiro.test(d) # => p-value = 0.6141
+```
+
+```{r, include=FALSE}
+t.test_c_mem_score_test1_s3 <- t.test(mem_score ~ predictiveness, data = c_mem_score_test1_s3, paired = TRUE)
+print(t.test_c_mem_score_test1_s3)
+```
+
+```{r, include=FALSE}
+pred_c_mem_score_test1_s3 <- subset(c_mem_score_test1_s3,  predictiveness == "predictive", mem_score, drop = TRUE)
+nonpred_c_mem_score_test1_s3 <- subset(c_mem_score_test1_s3,  predictiveness == "non-predictive", mem_score, drop = TRUE)
+bay_t.test_c_mem_score_test1_s3 <-  ttestBF(pred_c_mem_score_test1_s3, nonpred_c_mem_score_test1_s3, paired = TRUE)
+print(bay_t.test_c_mem_score_test1_s3)
+```
+
+There are no significant differences in responding (`r apa(t.test_c_mem_score_test1_s3)`, `r report_BF_and_error(bay_t.test_c_mem_score_test1_s3[1])`).
+
+## Test2
+
+### Accuracy
+
+```{r, echo=FALSE}
+#plot test accuracy
+m_acc_test2_s3 <- test2_s3 %>%
+  group_by(predictiveness) %>%
+  summarise(mean_acc = mean(acc, na.rm = TRUE), 
+            sd_acc = sd(acc, na.rm = TRUE)/sqrt(length(acc)))
+ggplot(data = m_acc_test2_s3) +
+  geom_col(mapping = aes(x = predictiveness, y = mean_acc)) +
+  geom_errorbar(aes(x = predictiveness, y= mean_acc, ymin = mean_acc - sd_acc, ymax = mean_acc + sd_acc)) +
+  coord_cartesian(ylim = c(0, 1))+
+  scale_x_discrete (name = "Type of cue") +
+  scale_y_continuous(name = "Accuracy") +
+  labs(title = "Mean accuracy for no subtle group in test2 phase")
+```
+
+```{r, include=FALSE}
+#t test accuracy
+acc_test2_s3 <- test2_s3 %>%
+  group_by (pNum, predictiveness) %>%
+  summarise(acc = mean(acc, na.rm = TRUE))
+# compute the difference
+d <- with(acc_test2_s3, 
+        acc[predictiveness == "non-predictive"] - acc[predictiveness == "predictive"])
+# Shapiro-Wilk normality test for the differences
+shapiro.test(d) # 
+```
+
+```{r, include=FALSE}
+t.test_acc_test2_s3 <- t.test(acc ~ predictiveness, data = acc_test2_s3, paired = TRUE)
+print(t.test_acc_test2_s3)
+```
+
+```{r, include=FALSE}
+pred_acc_test2_s3 <- subset(acc_test2_s3,  predictiveness == "predictive", acc, drop = TRUE)
+nonpred_acc_test2_s3 <- subset(acc_test2_s3,  predictiveness == "non-predictive", acc, drop = TRUE)
+bay_t.test_acc_test2_s3 <-  ttestBF(pred_acc_test2_s3, nonpred_acc_test2_s3, paired = TRUE)
+print(bay_t.test_acc_test2_s3)
+```
+
+There are no differences in responding depending on the predictiveness of the target (`r apa(t.test_acc_test2_s3)`, `r report_BF_and_error(bay_t.test_acc_test2_s3[1])`).
+
+### Memory score
+
+```{r, echo=FALSE}
+#plot test mem_score
+m_mem_test2_s3 <- test2_s3 %>%
+  group_by(predictiveness) %>%
+  summarise(mean_mem_score = mean(mem_score, na.rm = TRUE), 
+            sd_mem_score = sd(mem_score, na.rm = TRUE)/sqrt(length(mem_score)))
+ggplot(data = m_mem_test2_s3) +
+  geom_col(mapping = aes(x = predictiveness, y = mean_mem_score)) +
+  geom_errorbar(aes(x = predictiveness, y= mean_mem_score, ymin = mean_mem_score - sd_mem_score, ymax = mean_mem_score + sd_mem_score)) +
+  coord_cartesian(ylim = c(0, 10))+
+  scale_x_discrete (name = "Type of cue") +
+  scale_y_continuous(name = "Memory score") +
+  labs(title = "Mean memory score for group no subtle in test2 phase")
+```
+
+```{r, include=FALSE}
+#t test mem_score
+mem_score_test2_s3 <- test2_s3 %>%
+  group_by (pNum, predictiveness) %>%
+  summarise(mem_score = mean(mem_score, na.rm = TRUE))
+# compute the difference
+d <- with(mem_score_test2_s3, 
+        mem_score[predictiveness == "non-predictive"] - mem_score[predictiveness == "predictive"])
+# Shapiro-Wilk normality test for the differences
+shapiro.test(d) 
+```
+
+```{r, include=FALSE}
+t.test_mem_score_test2_s3 <- t.test(mem_score ~ predictiveness, data = mem_score_test2_s3, paired = TRUE)
+print(t.test_mem_score_test2_s3)
+```
+
+```{r, include=FALSE}
+pred_mem_score_test2_s3 <- subset(mem_score_test2_s3,  predictiveness == "predictive", mem_score, drop = TRUE)
+nonpred_mem_score_test2_s3 <- subset(mem_score_test2_s3,  predictiveness == "non-predictive", mem_score, drop = TRUE)
+bay_t.test_mem_score_test2_s3 <-  ttestBF(pred_mem_score_test2_s3, nonpred_mem_score_test2_s3, paired = TRUE)
+print(bay_t.test_mem_score_test2_s3)
+```
+
+There´s lower memory score for the non-predictive, but there is no significant difference (`r apa(t.test_mem_score_test2_s3)`, `r report_BF_and_error(bay_t.test_mem_score_test2_s3[1])`).
+
+### Corrected memory score
+
+```{r, echo=FALSE}
+#plot test2 mem_score but take out the errors
+c_test2_s3 <- filter(test2_s3, acc == 1)
+c_m_mem_test2_s3 <- c_test2_s3 %>%
+  group_by(cue_type) %>%
+  summarise(mean_mem_score = mean(mem_score, na.rm = TRUE), 
+            sd_mem_score = sd(mem_score, na.rm = TRUE)/sqrt(length(mem_score)))
+ggplot(data = c_m_mem_test2_s3) +
+  geom_col(mapping = aes(x = cue_type, y = mean_mem_score)) +
+  geom_errorbar(aes(x = cue_type, y= mean_mem_score, ymin = mean_mem_score - sd_mem_score, ymax = mean_mem_score + sd_mem_score)) +
+  coord_cartesian(ylim = c(0, 10))+
+  scale_x_discrete (name = "Type of cue") +
+  scale_y_continuous(name = "Memory score") +
+  labs(title = "Mean corrected memory score in test2 phase for no subtle test")
+```
+
+```{r, include=FALSE}
+#t test mem_score
+c_mem_score_test2_s3 <- c_test2_s3 %>%
+  group_by (pNum, predictiveness) %>%
+  summarise(mem_score = mean(mem_score, na.rm = TRUE))
+p_pred_c_mem_score_test2_s3 <- subset(c_mem_score_test2_s3,  predictiveness == "predictive", pNum, drop = TRUE)
+p_nonpred_c_mem_score_test2_s3 <- subset(c_mem_score_test2_s3,  predictiveness == "non-predictive", pNum, drop = TRUE)
+c_mem_score_test2_s3 <- c_mem_score_test2_s3[c_mem_score_test2_s3$pNum %in% p_pred_c_mem_score_test2_s3,]
+c_mem_score_test2_s3 <- c_mem_score_test2_s3[c_mem_score_test2_s3$pNum %in% p_nonpred_c_mem_score_test2_s3,]
+# compute the difference
+d <- with(c_mem_score_test2_s3, 
+        mem_score[predictiveness == "non-predictive"] - mem_score[predictiveness == "predictive"])
+# Shapiro-Wilk normality test for the differences
+shapiro.test(d)
+```
+
+```{r, include=FALSE}
+t.test_c_mem_score_test2_s3 <- t.test(mem_score ~ predictiveness, data = c_mem_score_test2_s3, paired = TRUE)
+print(t.test_c_mem_score_test2_s3)
+```
+
+```{r,include=FALSE}
+pred_c_mem_score_test2_s3 <- subset(c_mem_score_test2_s3,  predictiveness == "predictive", mem_score, drop = TRUE)
+nonpred_c_mem_score_test2_s3 <- subset(c_mem_score_test2_s3,  predictiveness == "non-predictive", mem_score, drop = TRUE)
+bay_t.test_c_mem_score_test2_s3 <-  ttestBF(pred_c_mem_score_test2_s3, nonpred_c_mem_score_test2_s3, paired = TRUE)
+print(bay_t.test_c_mem_score_test2_s3)
+```
+
+There´s lower memory score for the non-predictive, but there is no significant difference (`r apa(t.test_c_mem_score_test2_s3)`, `r report_BF_and_error(bay_t.test_c_mem_score_test2_s3[1])`).

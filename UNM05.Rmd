@@ -11,7 +11,7 @@ library(BayesFactor)
 library(apa)
 library(emmeans)
 library("writexl")
-load("C:/Users/munizdie/OneDrive - Lancaster University/Experiments/UNM05_analysis/UNM05_proc_data.RData")
+load("UNM05_proc_data.RData")
 
 # function to force scientific formatting of numbers (used for large BFs)
 changeSciNot <- function(n) {
@@ -135,13 +135,17 @@ As expected, subjects showed rapid learning, reaching an accuracy of around .875
 ### Accuracy
 
 ```{r, echo = FALSE}
+test1 <- test1 %>%
+  mutate(similarity = case_when(session == 1 ~ "No subtle", 
+                                session == 2 ~"Subtle", 
+                                session == 3 ~ "Very subtle"))
 #plot test1 accuracy
 m_acc_test1 <- test1 %>%
-  group_by(cue_type) %>%
+  group_by(cue_type, similarity) %>%
   summarise(mean_acc = mean(acc, na.rm = TRUE), 
             sd_acc = sd(acc, na.rm = TRUE)/sqrt(length(acc)))
 ggplot(data = m_acc_test1) +
-  geom_col(mapping = aes(x = cue_type, y = mean_acc)) +
+  geom_col(mapping = aes(x = cue_type, y = mean_acc, fill = similarity)) +
   geom_errorbar(aes(x = cue_type, y= mean_acc, ymin = mean_acc - sd_acc, ymax = mean_acc + sd_acc)) +
   coord_cartesian(ylim = c(0, 1))+
   scale_x_discrete (name = "Type of test") +
@@ -180,11 +184,11 @@ Except for those that did the very subtle test, all subjects had lower accuracy 
 ```{r, echo = FALSE}
 #plot test mem_score
 m_mem_test1 <- test1 %>%
-  group_by(cue_type) %>%
+  group_by(cue_type, similarity) %>%
   summarise(mean_mem_score = mean(mem_score, na.rm = TRUE), 
             sd_mem_score = sd(mem_score, na.rm = TRUE)/sqrt(length(mem_score)))
 ggplot(data = m_mem_test1) +
-  geom_col(mapping = aes(x = cue_type, y = mean_mem_score)) +
+  geom_col(mapping = aes(x = cue_type, y = mean_mem_score, fill = similarity)) +
   geom_errorbar(aes(x = cue_type, y= mean_mem_score, ymin = mean_mem_score - sd_mem_score, ymax = mean_mem_score + sd_mem_score)) +
   coord_cartesian(ylim = c(0, 10))+
   scale_x_discrete (name = "Type of cue") +
@@ -224,11 +228,11 @@ Again, except for those that did the very subtle test, all subjects had lower ac
 #plot test mem_score but take out the errors
 c_test1 <- filter(test1, acc == 1)
 c_m_mem_test1 <- c_test1 %>%
-  group_by(cue_type) %>%
+  group_by(cue_type, similarity) %>%
   summarise(mean_mem_score = mean(mem_score, na.rm = TRUE), 
             sd_mem_score = sd(mem_score, na.rm = TRUE)/sqrt(length(mem_score)))
 ggplot(data = c_m_mem_test1) +
-  geom_col(mapping = aes(x = cue_type, y = mean_mem_score)) +
+  geom_col(mapping = aes(x = cue_type, y = mean_mem_score, fill = similarity)) +
   geom_errorbar(aes(x = cue_type, y= mean_mem_score, ymin = mean_mem_score - sd_mem_score, ymax = mean_mem_score + sd_mem_score)) +
   coord_cartesian(ylim = c(0, 10))+
   scale_x_discrete (name = "Type of cue") +
@@ -268,12 +272,16 @@ When only hits are taken into account in test 1, memory score is corrected in te
 
 ```{r, echo=FALSE}
 #plot test accuracy
+test2 <- test2 %>%
+  mutate(similarity = case_when(session == 1 ~ "No subtle", 
+                                session == 2 ~"Subtle", 
+                                session == 3 ~ "Very subtle"))
 m_acc_test2 <- test2 %>%
-  group_by(cue_type) %>%
+  group_by(cue_type, similarity) %>%
   summarise(mean_acc = mean(acc, na.rm = TRUE), 
             sd_acc = sd(acc, na.rm = TRUE)/sqrt(length(acc)))
 ggplot(data = m_acc_test2) +
-  geom_col(mapping = aes(x = cue_type, y = mean_acc)) +
+  geom_col(mapping = aes(x = cue_type, y = mean_acc, fill = similarity)) +
   geom_errorbar(aes(x = cue_type, y= mean_acc, ymin = mean_acc - sd_acc, ymax = mean_acc + sd_acc)) +
   coord_cartesian(ylim = c(0, 1))+
   scale_x_discrete (name = "Type of cue") +
@@ -311,11 +319,11 @@ There are no differences in accuracy in the second test, confirmed by the ANOVA 
 ```{r, echo=FALSE}
 #plot test mem_score
 m_mem_test2 <- test2 %>%
-  group_by(cue_type) %>%
+  group_by(cue_type, similarity) %>%
   summarise(mean_mem_score = mean(mem_score, na.rm = TRUE), 
             sd_mem_score = sd(mem_score, na.rm = TRUE)/sqrt(length(mem_score)))
 ggplot(data = m_mem_test2) +
-  geom_col(mapping = aes(x = cue_type, y = mean_mem_score)) +
+  geom_col(mapping = aes(x = cue_type, y = mean_mem_score, fill = similarity)) +
   geom_errorbar(aes(x = cue_type, y= mean_mem_score, ymin = mean_mem_score - sd_mem_score, ymax = mean_mem_score + sd_mem_score)) +
   coord_cartesian(ylim = c(0, 10))+
   scale_x_discrete (name = "Type of cue") +
@@ -355,11 +363,11 @@ In test two, the memory score is always lower for the non-predictive targets, an
 #plot test2 mem_score but take out the errors
 c_test2 <- filter(test2, acc == 1)
 c_m_mem_test2 <- c_test2 %>%
-  group_by(cue_type) %>%
+  group_by(cue_type, similarity) %>%
   summarise(mean_mem_score = mean(mem_score, na.rm = TRUE), 
             sd_mem_score = sd(mem_score, na.rm = TRUE)/sqrt(length(mem_score)))
 ggplot(data = c_m_mem_test2) +
-  geom_col(mapping = aes(x = cue_type, y = mean_mem_score)) +
+  geom_col(mapping = aes(x = cue_type, y = mean_mem_score, fill = similarity)) +
   geom_errorbar(aes(x = cue_type, y= mean_mem_score, ymin = mean_mem_score - sd_mem_score, ymax = mean_mem_score + sd_mem_score)) +
   coord_cartesian(ylim = c(0, 10))+
   scale_x_discrete (name = "Type of cue") +

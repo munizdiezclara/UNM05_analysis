@@ -264,7 +264,7 @@ c_bay_ANOVA_mem_score_test1_interaction <- c_bay_ANOVA_mem_score_test1[4]/c_bay_
 print(c_bay_ANOVA_mem_score_test1_interaction)
 ```
 
-When only hits are taken into account in test 1, memory score is corrected in test 1, there is a significant effect of predictiveness (`r apa(c_ANOVA_mem_score_test1, effect = "predictiveness")`), but the bayesian evidence is anecdotal (`r report_BF_and_error(c_bay_ANOVA_mem_score_test1[2])`. However, there were no significant effects of the type of test (`r apa(c_ANOVA_mem_score_test1, effect = "session")`, `r report_BF_and_error(c_bay_ANOVA_mem_score_test1[1])`) nor the interaction (`r apa(c_ANOVA_mem_score_test1, effect = "session")`, `r report_BF_and_error(c_bay_ANOVA_mem_score_test1[1])`).
+When only hits are taken into account in test 1, memory score is corrected in test 1, there is a significant effect of predictiveness (`r apa(c_ANOVA_mem_score_test1, effect = "predictiveness")`), but the bayesian evidence is anecdotal (`r report_BF_and_error(c_bay_ANOVA_mem_score_test1[2])`. However, there were no significant effects of the type of test (`r apa(c_ANOVA_mem_score_test1, effect = "session")`, `r report_BF_and_error(c_bay_ANOVA_mem_score_test1[1])`) nor the interaction (`r apa(c_ANOVA_mem_score_test1, effect = "session:predictiveness")`, `r report_BF_and_error(c_bay_ANOVA_mem_score_test1_interaction[1])`).
 
 ## Test2
 

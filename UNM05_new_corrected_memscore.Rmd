@@ -12,11 +12,22 @@ library(BayesFactor)
 library(apa)
 library(emmeans)
 library("writexl")
-load("C:/Users/munizdie/OneDrive - Lancaster University/Experiments/UNM05_analysis/UNM05_proc_data.RData")
+load("UNM05_proc_data.RData")
 ```
 
-#Create a corrected memory score column
+
 ```{r}
+#Color code conditions
+test1 <- test1 %>%
+  mutate(condition = case_when(session == 1 ~ "Very Subtle",
+                                session == 2 ~ "Subtle",
+                                session == 3 ~ "No subtle"))
+test2 <- test2 %>%
+  mutate(condition = case_when(session == 1 ~ "Very Subtle",
+                                session == 2 ~ "Subtle",
+                                session == 3 ~ "No subtle"))
+
+#Create a corrected memory score column
 test1 <- test1 %>%
 mutate (c_mem_score = case_when(acc == 0 ~ 0, acc == 1 ~ mem_score))
 test2 <- test2 %>%
@@ -29,11 +40,11 @@ mutate (c_mem_score = case_when(acc == 0 ~ 0, acc == 1 ~ mem_score))
 ```{r}
 #plot test mem_score but take out the errors
 c_m_mem_test1 <- test1 %>%
-  group_by(cue_type) %>%
+  group_by(cue_type, condition) %>%
   summarise(mean_mem_score = mean(c_mem_score, na.rm = TRUE), 
             sd_mem_score = sd(c_mem_score, na.rm = TRUE)/sqrt(length(c_mem_score)))
 ggplot(data = c_m_mem_test1) +
-  geom_col(mapping = aes(x = cue_type, y = mean_mem_score)) +
+  geom_col(mapping = aes(x = cue_type, y = mean_mem_score, fill = condition)) +
   geom_errorbar(aes(x = cue_type, y= mean_mem_score, ymin = mean_mem_score - sd_mem_score, ymax = mean_mem_score + sd_mem_score)) +
   coord_cartesian(ylim = c(0, 10))+
   scale_x_discrete (name = "Type of cue") +
@@ -69,11 +80,11 @@ When memory score is corrected in test 1, there are no significant effects.
 ```{r}
 #plot test2 mem_score but take out the errors
 c_m_mem_test2 <- test2 %>%
-  group_by(cue_type) %>%
+  group_by(cue_type, condition) %>%
   summarise(mean_mem_score = mean(c_mem_score, na.rm = TRUE), 
             sd_mem_score = sd(c_mem_score, na.rm = TRUE)/sqrt(length(c_mem_score)))
 ggplot(data = c_m_mem_test2) +
-  geom_col(mapping = aes(x = cue_type, y = mean_mem_score)) +
+  geom_col(mapping = aes(x = cue_type, y = mean_mem_score, fill = condition)) +
   geom_errorbar(aes(x = cue_type, y= mean_mem_score, ymin = mean_mem_score - sd_mem_score, ymax = mean_mem_score + sd_mem_score)) +
   coord_cartesian(ylim = c(0, 10))+
   scale_x_discrete (name = "Type of cue") +

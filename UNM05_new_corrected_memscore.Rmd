@@ -16,7 +16,7 @@ load("UNM05_proc_data.RData")
 ```
 
 
-```{r}
+```{r, include=FALSE}
 #Color code conditions
 test1 <- test1 %>%
   mutate(condition = case_when(session == 1 ~ "Very Subtle",
@@ -36,7 +36,7 @@ mutate (c_mem_score = case_when(acc == 0 ~ 0, acc == 1 ~ mem_score))
 
 #All Data
 ##Test1
-###Corrected memory score
+###Corrected memory score (hits x1, errors x0)
 ```{r}
 #plot test mem_score but take out the errors
 c_m_mem_test1 <- test1 %>%
@@ -51,7 +51,7 @@ ggplot(data = c_m_mem_test1) +
   scale_y_continuous(name = "Memory score") +
   labs(title = "Mean corrected memory score for each type of cue in test1 phase")
 ```
-```{r}
+```{r, include=FALSE}
 #ANOVA mem_score
 c_mem_score_test1 <- test1 %>%
   group_by (pNum, session, predictiveness) %>%
@@ -61,17 +61,12 @@ c_mem_score_test1$session <- factor(c_mem_score_test1$session)
 c_mem_score_test1$pNum <- factor(c_mem_score_test1$pNum)
 c_ANOVA_mem_score_test1 <- aov_car(formula = mem_score ~ session + Error(pNum*predictiveness), data = c_mem_score_test1)
 print(c_ANOVA_mem_score_test1)
-```
-
-```{r}
 c_bay_ANOVA_mem_score_test1 <- anovaBF(formula = mem_score ~ session*predictiveness + pNum,
         data = data.frame(c_mem_score_test1),
         whichRandom = "pNum")
 print(c_bay_ANOVA_mem_score_test1)
-```
-
-```{r}
-c_bay_ANOVA_mem_score_test1[4]/c_bay_ANOVA_mem_score_test1[3]
+c_bay_ANOVA_mem_score_test1_int <- c_bay_ANOVA_mem_score_test1[4]/c_bay_ANOVA_mem_score_test1[3]
+print(c_bay_ANOVA_mem_score_test1_int)
 ```
 When memory score is corrected in test 1, there are no significant effects.
 
@@ -127,7 +122,7 @@ test2_s3 <- filter(test2, session == 3)
 
 # Very subtle test
 ## Test1
-###Corrected memory score
+###Corrected memory score (hits x1, errors x0)
 ```{r}
 #plot test mem_score but take out the errors
 c_m_mem_test1_s1 <- test1_s1 %>%
@@ -170,7 +165,7 @@ print(bay_t.test_c_mem_score_test1_s1)
 There are no significant differences in test 1 very subtle when the memory score is corrected.
 
 ##Test2
-###Corrected memory score
+###Corrected memory score (hits x1, errors x0)
 ```{r}
 #plot test2 mem_score but take out the errors
 c_m_mem_test2_s1 <- test2_s1 %>%
@@ -199,9 +194,6 @@ shapiro.test(d)
 ```{r}
 t.test_c_mem_score_test2_s1 <- t.test(mem_score ~ predictiveness, data = c_mem_score_test2_s1, paired = TRUE)
 print(t.test_c_mem_score_test2_s1)
-```
-
-```{r}
 pred_c_mem_score_test2_s1 <- subset(c_mem_score_test2_s1,  predictiveness == "predictive", mem_score, drop = TRUE)
 nonpred_c_mem_score_test2_s1 <- subset(c_mem_score_test2_s1,  predictiveness == "non-predictive", mem_score, drop = TRUE)
 bay_t.test_c_mem_score_test2_s1 <-  ttestBF(pred_c_mem_score_test2_s1, nonpred_c_mem_score_test2_s1, paired = TRUE)
@@ -211,7 +203,7 @@ In this case, there´s a effect of predictiveness with moderate bayesian evidenc
 
 # Subtle test
 ## Test1
-###Corrected memory score
+###Corrected memory score (hits x1, errors x0)
 ```{r}
 c_m_mem_test1_s2 <- test1_s2 %>%
   group_by(cue_type) %>%
@@ -250,7 +242,7 @@ print(bay_t.test_c_mem_score_test1_s1)
 Responding is lower for the non-predictive targets, there are no significant differences and the bayesian test indicates anecdotal evidence for the null hypothesis
 
 ##Test2
-###Corrected memory score
+###Corrected memory score (hits x1, errors x0)
 ```{r}
 c_m_mem_test2_s2 <- test2_s2 %>%
   group_by(cue_type) %>%
@@ -290,7 +282,7 @@ There is no significant difference.
 
 # No subtle test
 ## Test1
-###Corrected memory score
+###Corrected memory score (hits x1, errors x0)
 ```{r}
 c_m_mem_test1_s3 <- test1_s3 %>%
   group_by(cue_type) %>%
@@ -344,7 +336,6 @@ ggplot(data = c_m_mem_test2_s3) +
   scale_y_continuous(name = "Memory score") +
   labs(title = "Mean corrected memory score in test2 phase for no subtle test")
 ```
-
 ```{r}
 #t test mem_score
 c_mem_score_test2_s3 <- test2_s3 %>%

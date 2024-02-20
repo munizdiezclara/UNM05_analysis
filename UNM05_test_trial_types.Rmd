@@ -14,7 +14,7 @@ library(tidyverse)
 library(afex)
 library(BayesFactor)
 library(apa)
-library(emmeans)
+#library("emmeans")
 library("writexl")
 load("UNM05_proc_data.RData")
 
@@ -88,7 +88,11 @@ This was a pilot experiment in which we aimed to find the most appropriate memor
 
 # All Data
 ```{r, include=FALSE}
-#Color code conditions
+training <- filter(training, !participant %in% not_passed)
+test1 <- filter(test1, !participant %in% not_passed)
+test2 <- filter(test2, !participant %in% not_passed)
+
+#Code conditions
 test1 <- test1 %>%
   mutate(condition = case_when(session == 1 ~ "Very Subtle",
                                 session == 2 ~ "Subtle",
@@ -110,201 +114,106 @@ mutate (c_mem_score = case_when(acc == 0 ~ 0, acc == 1 ~ mem_score))
 
 ```{r, include=FALSE}
 test2 <- test2 %>%
-  mutate(trial_type = case_when((target == 1 & distractor_test2 == 2) | (target == 2 & distractor_test2 == 1) ~ "RP",
-                                (target == 5 & distractor_test2 == 6) | (target == 6 & distractor_test2 == 5) ~ "RNP",
-                                (target == 1 & (distractor_test2 == 5 | distractor_test2 == 6)) | (target == 2 & (distractor_test2 == 5 | distractor_test2 == 6)) ~ "FP",
-                                (target == 5 & (distractor_test2 == 1 | distractor_test2 == 2)) | (target == 6 & (distractor_test2 == 1 | distractor_test2 == 2)) ~ "FNP"),
-         cue_trial_type = case_when(trial_type == "RP" & condition == "Very Subtle" ~ "VS_RP",
-                                    trial_type == "RP" & condition == "Subtle" ~ "S_RP",
-                                    trial_type == "RP" & condition == "No subtle" ~ "NS_RP",
-                                    trial_type == "RNP" & condition == "Very Subtle" ~ "VS_RNP",
-                                    trial_type == "RNP" & condition == "Subtle" ~ "S_RNP",
-                                    trial_type == "RNP" & condition == "No subtle" ~ "NS_RNP",
-                                    trial_type == "FP" & condition == "Very Subtle" ~ "VS_FP",
-                                    trial_type == "FP" & condition == "Subtle" ~ "S_FP",
-                                    trial_type == "FP" & condition == "No subtle" ~ "NS_FP",
-                                    trial_type == "FNP" & condition == "Very Subtle" ~ "VS_FNP",
-                                    trial_type == "FNP" & condition == "Subtle" ~ "S_FNP",
-                                    trial_type == "FNP" & condition == "No subtle" ~ "NS_FNP"))
+  mutate(trial_type = case_when((target == 1 & distractor_test2 == 2) | (target == 2 & distractor_test2 == 1) ~ "Pt vs Pf" ,
+                                (target == 5 & distractor_test2 == 6) | (target == 6 & distractor_test2 == 5) ~ "NPt vs NPf",
+                                (target == 1 & (distractor_test2 == 5 | distractor_test2 == 6)) | (target == 2 & (distractor_test2 == 5 | distractor_test2 == 6)) ~ "Pt vs NPf",
+                                  (target == 5 & (distractor_test2 == 1 | distractor_test2 == 2)) | (target == 6 & (distractor_test2 == 1 | distractor_test2 == 2)) ~  "NPt vs Pf"),
+         congruence = case_when ((trial_type == "Pt vs Pf") | (trial_type == "NPt vs NPf") ~ "congruent",
+                                 (trial_type == "Pt vs NPf") | (trial_type == "NPt vs Pf") ~ "incongruent"))
 m_acc_test2 <- test2 %>%
-  group_by(cue_trial_type, condition) %>%
+  group_by(trial_type, condition) %>%
   summarise(mean_acc = mean(acc, na.rm = TRUE), 
-            sd_acc = sd(acc, na.rm = TRUE)/sqrt(length(acc)))
+            se_acc = sd(acc, na.rm = TRUE)/sqrt(length(acc)))
 ```
 ```{r, echo=FALSE}
 ggplot(data = m_acc_test2) +
-  geom_col(mapping = aes(x = cue_trial_type, y = mean_acc, fill = condition)) +
-  geom_errorbar(aes(x = cue_trial_type, y= mean_acc, ymin = mean_acc - sd_acc, ymax = mean_acc + sd_acc)) +
+  geom_col(mapping = aes(x = condition, y = mean_acc, fill = trial_type), position = position_dodge2()) +
+  geom_errorbar(aes(x= condition, y = mean_acc, ymin = mean_acc-se_acc, ymax = mean_acc+se_acc, group = trial_type), color = "black", width=.2,position=position_dodge(0.9)) +
   coord_cartesian(ylim = c(0, 1))+
-  scale_x_discrete (name = "Type of cue") +
+  scale_x_discrete (name = "Group") + 
+  labs(fill = "Trial type") +
   scale_y_continuous(name = "Accuracy") +
-  labs(title = "Mean accuracy for each type of cue in test2 phase")
+  labs(title = "Mean accuracy for each type of cue in test2 phase")+
+  scale_fill_brewer(palette = "PRGn")
 ```
 ```{r, include=FALSE}
 #ANOVA accuracy
 acc_test2 <- test2 %>%
-  group_by (pNum, session, trial_type) %>%
+  group_by (pNum, session, predictiveness, congruence) %>%
   summarise(acc = mean(acc, na.rm = TRUE))
-acc_test2$trial_type <- factor(acc_test2$trial_type)
+acc_test2$predictiveness <- factor(acc_test2$predictiveness)
+acc_test2$congruence <- factor(acc_test2$congruence)
 acc_test2$session <- factor(acc_test2$session)
 acc_test2$pNum <- factor(acc_test2$pNum)
-ANOVA_acc_test2 <- aov_car(formula = acc ~ session + Error(pNum*trial_type), data = acc_test2)
+ANOVA_acc_test2 <- aov_car(formula = acc ~ session + Error(pNum*predictiveness*congruence), data = acc_test2)
 print(ANOVA_acc_test2)
-bay_ANOVA_acc_test2 <- anovaBF(formula = acc ~ session*trial_type + pNum,
+bay_ANOVA_acc_test2 <- anovaBF(formula = acc ~ session + predictiveness + congruence + pNum,
         data = data.frame(acc_test2),
         whichRandom = "pNum")
 print(bay_ANOVA_acc_test2)
-bay_ANOVA_acc_test2_interaction <- bay_ANOVA_acc_test2[4]/bay_ANOVA_acc_test2[3]
-print(bay_ANOVA_acc_test2_interaction)
+bay_ANOVA_acc_test2_sxp <- bay_ANOVA_acc_test2[4]/bay_ANOVA_acc_test2[3]
+print(bay_ANOVA_acc_test2_sxp)
+bay_ANOVA_acc_test2_pxc <- bay_ANOVA_acc_test2[13]/bay_ANOVA_acc_test2[7]
+print(bay_ANOVA_acc_test2_pxc)
+bay_ANOVA_acc_test2_sxc <- bay_ANOVA_acc_test2[10]/bay_ANOVA_acc_test2[6]
+print(bay_ANOVA_acc_test2_sxc)
+bay_ANOVA_acc_test2_sxpxc <- bay_ANOVA_acc_test2[18]/bay_ANOVA_acc_test2[17]
+print(bay_ANOVA_acc_test2_sxpxc)
 ```
 
-There are no differences in accuracy in Test 2, confirmed by the ANOVA (Similarity: `r apa(ANOVA_acc_test2, effect = "session")`, Trial Type: `r apa(ANOVA_acc_test2, effect = "trial_type")`, interaction; `r apa(ANOVA_acc_test2, effect = "session:trial_type")`). Bayesian eveidence was strong for the null hypothesis for Similarity, very strong for the Type Trial, and very strong for the interaction (`r report_BF_and_error(bay_ANOVA_acc_test2[1])`, `r report_BF_and_error(bay_ANOVA_acc_test2[2])`, `r report_BF_and_error(bay_ANOVA_acc_test2_interaction[1])`, respectively).
+There are no differences in accuracy in Test 2, confirmed by the ANOVA (Group: `r apa(ANOVA_acc_test2, effect = "session")`, Predictiveness: `r apa(ANOVA_acc_test2, effect = "predictiveness")`; Congruence: `r apa(ANOVA_acc_test2, effect = "congruence")`;  GroupxPredictiveness `r apa(ANOVA_acc_test2, effect = "session:predictiveness")`; PredictivenessxCongruence: `r apa(ANOVA_acc_test2, effect = "predictiveness:congruence")`; GroupxCongruence: `r apa(ANOVA_acc_test2, effect = "session:congruence")`; GroupxPredictivenessxCongruence: `r apa(ANOVA_acc_test2, effect = "session:predictiveness:congruence")`). Bayesian evidence was moderate for the null hypothesis for Predictiveness, Congruence, PredictivenessxCongruence, GroupxCongruence, and GroupxPredictivenessxCongruence (Predictiveness: `r report_BF_and_error(bay_ANOVA_acc_test2[2])`; Congruence `r report_BF_and_error(bay_ANOVA_acc_test2[5])`, PredictivenessxCongruence:`r report_BF_and_error(bay_ANOVA_acc_test2_pxc[1])`; GroupxCongruence: `r report_BF_and_error(bay_ANOVA_acc_test2_sxc[1])`; GroupxPredictivenessxCongruence: `r report_BF_and_error(bay_ANOVA_acc_test2_sxpxc[1])`), and strong for the Group and GroupxPredictiveness interaction (`r report_BF_and_error(bay_ANOVA_acc_test2[1])`; `r report_BF_and_error(bay_ANOVA_acc_test2_sxp[1])`, respectively).
 
-### Memory Score
-
-```{r, include=FALSE}
-#plot test mem_score
-m_mem_test2 <- test2 %>%
-  group_by(cue_trial_type, condition) %>%
-  summarise(mean_mem_score = mean(mem_score, na.rm = TRUE), 
-            sd_mem_score = sd(mem_score, na.rm = TRUE)/sqrt(length(mem_score)))
-```
-```{r, echo=FALSE}
-ggplot(data = m_mem_test2) +
-  geom_col(mapping = aes(x = cue_trial_type, y = mean_mem_score, fill = condition)) +
-  geom_errorbar(aes(x = cue_trial_type, y= mean_mem_score, ymin = mean_mem_score - sd_mem_score, ymax = mean_mem_score + sd_mem_score)) +
-  coord_cartesian(ylim = c(0, 10))+
-  scale_x_discrete (name = "Type of cue") +
-  scale_y_continuous(name = "Memory score") +
-  labs(title = "Mean memory score for each type of cue in test2 phase")
-```
-```{r, include=FALSE}
-#ANOVA mem_score
-mem_score_test2 <- test2 %>%
-  group_by (pNum, session, trial_type) %>%
-  summarise(mem_score = mean(mem_score, na.rm = TRUE))
-mem_score_test2$trial_type <- factor(mem_score_test2$trial_type)
-mem_score_test2$session <- factor(mem_score_test2$session)
-mem_score_test2$pNum <- factor(mem_score_test2$pNum)
-ANOVA_mem_score_test2 <- aov_car(formula = mem_score ~ session + Error(pNum*trial_type), data = mem_score_test2)
-print(ANOVA_mem_score_test2)
-bay_ANOVA_mem_score_test2 <- anovaBF(formula = mem_score ~ session*trial_type + pNum,
-        data = data.frame(mem_score_test2),
-        whichRandom = "pNum")
-print(bay_ANOVA_mem_score_test2)
-bay_ANOVA_mem_score_test2_interaction <- bay_ANOVA_mem_score_test2[4]/bay_ANOVA_mem_score_test2[3]
-print(bay_ANOVA_mem_score_test2_interaction)
-```
-
-In test two, the memory score is always lower for the non-predictive targets, and the difference is bigger the more difficult the test is. However, there was not a significant effect of the Similarity ((`r apa(ANOVA_mem_score_test2, effect = "session")`, `r report_BF_and_error(bay_ANOVA_mem_score_test2[1])`), the Trial type (`r apa(ANOVA_mem_score_test2, effect = "trial_type")`, `r report_BF_and_error(bay_ANOVA_mem_score_test2[2])`),  nor the interaction ((`r apa(ANOVA_mem_score_test2, effect = "session:trial_type")`, `r report_BF_and_error(bay_ANOVA_mem_score_test2_interaction[1])`). Moderate null bayesian evidence was found for Similarity and Trial type, and very strong null evidence for the interaction.
-
-###Corrected memory score (hits x1, errors x0)
+### Memory Score (hits x1, errors x0)
 ```{r, include=FALSE}
 #plot test2 mem_score but take out the errors
 c_m_mem_test2 <- test2 %>%
-  group_by(cue_trial_type, condition) %>%
+  group_by(trial_type, condition) %>%
   summarise(mean_mem_score = mean(c_mem_score, na.rm = TRUE), 
-            sd_mem_score = sd(c_mem_score, na.rm = TRUE)/sqrt(length(c_mem_score)))
+            se_mem_score = sd(c_mem_score, na.rm = TRUE)/sqrt(length(c_mem_score)))
 ```
 ```{r, echo=FALSE}
 ggplot(data = c_m_mem_test2) +
-  geom_col(mapping = aes(x = cue_trial_type, y = mean_mem_score, fill = condition)) +
-  geom_errorbar(aes(x = cue_trial_type, y= mean_mem_score, ymin = mean_mem_score - sd_mem_score, ymax = mean_mem_score + sd_mem_score)) +
-  coord_cartesian(ylim = c(0, 10))+
-  scale_x_discrete (name = "Type of cue") +
+  geom_col(mapping = aes(x = condition, y = mean_mem_score, fill = trial_type), position = position_dodge2()) +
+  geom_errorbar(aes(x= condition, y = mean_mem_score, ymin = mean_mem_score-se_mem_score, ymax = mean_mem_score+se_mem_score, group = trial_type), color = "black", width=.2,position=position_dodge(0.9)) +
+  scale_x_discrete (name = "Group") + 
+  labs(fill = "Trial type") +
   scale_y_continuous(name = "Memory score") +
-  labs(title = "Mean corrected memory score for each type of cue in test2 phase")
+  labs(title = "Mean memory score for each type of cue in test2 phase")+
+  scale_fill_brewer(palette = "PRGn")
 ```
 ```{r, include=FALSE}
 #ANOVA mem_score
 c_mem_score_test2 <- test2 %>%
-  group_by (pNum, session, trial_type) %>%
+  group_by (pNum, session, predictiveness, congruence) %>%
   summarise(mem_score = mean(c_mem_score, na.rm = TRUE))
-c_mem_score_test2$trial_type <- factor(c_mem_score_test2$trial_type)
+c_mem_score_test2$predictiveness <- factor(c_mem_score_test2$predictiveness)
+c_mem_score_test2$congruence <- factor(c_mem_score_test2$congruence)
 c_mem_score_test2$session <- factor(c_mem_score_test2$session)
 c_mem_score_test2$pNum <- factor(c_mem_score_test2$pNum)
-c_ANOVA_mem_score_test2 <- aov_car(formula = mem_score ~ session + Error(pNum*trial_type), data = c_mem_score_test2)
+c_ANOVA_mem_score_test2 <- aov_car(formula = mem_score ~ session + Error(pNum*predictiveness*congruence), data = c_mem_score_test2)
 print(c_ANOVA_mem_score_test2)
-c_bay_ANOVA_mem_score_test2 <- anovaBF(formula = mem_score ~ session*trial_type + pNum,
+c_bay_ANOVA_mem_score_test2 <- anovaBF(formula = mem_score ~ session + predictiveness + congruence + pNum,
         data = data.frame(c_mem_score_test2),
         whichRandom = "pNum")
 print(c_bay_ANOVA_mem_score_test2)
-c_bay_ANOVA_mem_score_test2_int <- c_bay_ANOVA_mem_score_test2[4]/c_bay_ANOVA_mem_score_test2[3]
-print(c_bay_ANOVA_mem_score_test2_int)
+c_bay_ANOVA_mem_score_test2_sxp <- c_bay_ANOVA_mem_score_test2[4]/c_bay_ANOVA_mem_score_test2[3]
+print(c_bay_ANOVA_mem_score_test2_sxp)
+c_bay_ANOVA_mem_score_test2_pxc <- c_bay_ANOVA_mem_score_test2[13]/c_bay_ANOVA_mem_score_test2[7]
+print(c_bay_ANOVA_mem_score_test2_pxc)
+c_bay_ANOVA_mem_score_test2_sxc <- c_bay_ANOVA_mem_score_test2[10]/c_bay_ANOVA_mem_score_test2[6]
+print(c_bay_ANOVA_mem_score_test2_sxc)
+c_bay_ANOVA_mem_score_test2_sxpxc <- c_bay_ANOVA_mem_score_test2[18]/c_bay_ANOVA_mem_score_test2[17]
+print(c_bay_ANOVA_mem_score_test2_sxpxc)
 ```
 
-The analyses indicate that there is a significant effect of the Trial type, although bayesian evidence is anecdotal in favor of the alternative hypothesis (`r apa(c_ANOVA_mem_score_test2, effect = "trial_type")`, `r report_BF_and_error(c_bay_ANOVA_mem_score_test2[2])`). However, there was not a significant effect of the Similarity nor the interaction, both with moderate bayesian evidence in favor of the null hypothesis (`r apa(c_ANOVA_mem_score_test2, effect = "session")`, `r report_BF_and_error(c_bay_ANOVA_mem_score_test2[1])`; `r apa(c_ANOVA_mem_score_test2, effect = "session:trial_type")`, `r report_BF_and_error(c_bay_ANOVA_mem_score_test2_int[1])`; respectively).
-
-### Corrected memory score (errors out)
-```{r, include=FALSE}
-#plot test2 mem_score but take out the errors
-c_test2 <- filter(test2, acc == 1)
-c_m_mem_test2 <- c_test2 %>%
-  group_by(cue_trial_type, condition) %>%
-  summarise(mean_mem_score = mean(mem_score, na.rm = TRUE), 
-            sd_mem_score = sd(mem_score, na.rm = TRUE)/sqrt(length(mem_score)))
-```
-```{r, echo=FALSE}
-ggplot(data = c_m_mem_test2) +
-  geom_col(mapping = aes(x = cue_trial_type, y = mean_mem_score, fill = condition)) +
-  geom_errorbar(aes(x = cue_trial_type, y= mean_mem_score, ymin = mean_mem_score - sd_mem_score, ymax = mean_mem_score + sd_mem_score)) +
-  coord_cartesian(ylim = c(0, 10))+
-  scale_x_discrete (name = "Type of cue") +
-  scale_y_continuous(name = "Memory score") +
-  labs(title = "Mean corrected memory score for each type of cue in test2 phase")
-```
-```{r, include=FALSE}
-#ANOVA mem_score
-c_mem_score_test2 <- c_test2 %>%
-  group_by (pNum, session, trial_type) %>%
-  summarise(mem_score = mean(mem_score, na.rm = TRUE))
-c_mem_score_test2$trial_type <- factor(c_mem_score_test2$trial_type)
-c_mem_score_test2$session <- factor(c_mem_score_test2$session)
-c_mem_score_test2$pNum <- factor(c_mem_score_test2$pNum)
-c_ANOVA_mem_score_test2 <- aov_car(formula = mem_score ~ session + Error(pNum*trial_type), data = c_mem_score_test2)
-print(c_ANOVA_mem_score_test2)
-c_bay_ANOVA_mem_score_test2 <- anovaBF(formula = mem_score ~ session*trial_type + pNum,
-        data = data.frame(c_mem_score_test2),
-        whichRandom = "pNum")
-print(c_bay_ANOVA_mem_score_test2)
-c_bay_ANOVA_mem_score_test2_interaction <- c_bay_ANOVA_mem_score_test2[4]/c_bay_ANOVA_mem_score_test2[3]
-print(c_bay_ANOVA_mem_score_test2_interaction)
-```
-
-In this case, there´s a clear effect of the Trial type, being the corrected memory score always lower in the non-predicitve targets (`r apa(c_ANOVA_mem_score_test2, effect = "trial_type")`, `r report_BF_and_error(c_bay_ANOVA_mem_score_test2[2])`). Again, nor the Similarity nor the interaction were significant (`r apa(c_ANOVA_mem_score_test2, effect = "session")`, `r report_BF_and_error(c_bay_ANOVA_mem_score_test2[1])`; `r apa(c_ANOVA_mem_score_test2, effect = "session:trial_type")`, `r report_BF_and_error(c_bay_ANOVA_mem_score_test2_interaction[1])`). Bayesian evidence was extreme in favor of the alternative hypothesis for the Trial type, but moderate null for the Similarity and strong null for the interaction.
+The only significant differences were due to the main effect of Predictiveness (`r apa(c_ANOVA_mem_score_test2, effect = "predictiveness")`, `r report_BF_and_error(c_bay_ANOVA_mem_score_test2[2])`), being the bayesian evidence strong for the alternative hypothesis. No other significant effects were found (Group: `r apa(c_ANOVA_mem_score_test2, effect = "session")`, Congruence: `r apa(c_ANOVA_mem_score_test2, effect = "congruence")`;  GroupxPredictiveness `r apa(c_ANOVA_mem_score_test2, effect = "session:predictiveness")`; PredictivenessxCongruence: `r apa(c_ANOVA_mem_score_test2, effect = "predictiveness:congruence")`; GroupxCongruence: `r apa(c_ANOVA_mem_score_test2, effect = "session:congruence")`; GroupxPredictivenessxCongruence: `r apa(c_ANOVA_mem_score_test2, effect = "session:predictiveness:congruence")`). Bayesian evidence was moderate for the null hypothesis for all other effects  (Group: `r report_BF_and_error(c_bay_ANOVA_mem_score_test2[1])`; Congruence `r report_BF_and_error(c_bay_ANOVA_mem_score_test2[5])`; GroupxPredictiveness: `r report_BF_and_error(c_bay_ANOVA_mem_score_test2_sxp[1])`; PredictivenessxCongruence:`r report_BF_and_error(c_bay_ANOVA_mem_score_test2_pxc[1])`; GroupxCongruence: `r report_BF_and_error(c_bay_ANOVA_mem_score_test2_sxc[1])`), except for the three way interaction, in which it was strong (`r report_BF_and_error(c_bay_ANOVA_mem_score_test2_sxpxc[1])`).
 
 # Very subtle test
 ## Test2
 ### Accuracy
 
 ```{r, include=FALSE}
-test2_s1 <- filter(test2, session == 1) %>%
-  mutate(trial_type = case_when((target == 1 & distractor_test2 == 2) | (target == 2 & distractor_test2 == 1) ~ "RP",
-                                (target == 5 & distractor_test2 == 6) | (target == 6 & distractor_test2 == 5) ~ "RNP",
-                                (target == 1 & (distractor_test2 == 5 | distractor_test2 == 6)) | (target == 2 & (distractor_test2 == 5 | distractor_test2 == 6)) ~ "FP",
-                                (target == 5 & (distractor_test2 == 1 | distractor_test2 == 2)) | (target == 6 & (distractor_test2 == 1 | distractor_test2 == 2)) ~ "FNP")) %>%
-  mutate(predictiveness = case_when(trial_type == "RP" ~ "predictive",
-                                    trial_type == "RNP"  ~ "non-predictive",
-                                    trial_type == "FP" ~ "predictive",
-                                    trial_type == "FNP" ~ "non-predictive"),
-         congruence = case_when(trial_type == "RP" ~ "congruent",
-                                    trial_type == "RNP"  ~ "congruent",
-                                    trial_type == "FP" ~ "incongruent",
-                                    trial_type == "FNP" ~ "incongruent"))
-#plot test accuracy
-m_acc_test2_s1 <- test2_s1 %>%
-  group_by(trial_type) %>%
-  summarise(mean_acc = mean(acc, na.rm = TRUE), 
-            sd_acc = sd(acc, na.rm = TRUE)/sqrt(length(acc)))
-```
-```{r, echo=FALSE}
-ggplot(data = m_acc_test2_s1) +
-  geom_col(mapping = aes(x = trial_type, y = mean_acc)) +
-  geom_errorbar(aes(x = trial_type, y= mean_acc, ymin = mean_acc - sd_acc, ymax = mean_acc + sd_acc)) +
-  coord_cartesian(ylim = c(0, 1))+
-  scale_x_discrete (name = "Type of cue") +
-  scale_y_continuous(name = "Accuracy") +
-  labs(title = "Mean accuracy in test2 phase for very subtle test")
+test2_s1 <- filter(test2, session == 1) 
 ```
 ```{r, include=FALSE}
 #ANOVA mem_score
@@ -324,26 +233,9 @@ bay_ANOVA_acc_test2_s1_int <- bay_ANOVA_acc_test2_s1[4]/bay_ANOVA_acc_test2_s1[3
 print(bay_ANOVA_acc_test2_s1_int)
 ```
 
-There was not a significant effect of the predictiveness (`r apa(ANOVA_acc_test2_s1, effect = "predictiveness")`, `r report_BF_and_error(bay_ANOVA_acc_test2_s1[1])`), with anecdotal bayesian evidence in favor of the null hypothesis: nor of congruence (`r apa(ANOVA_acc_test2_s1, effect = "congruence")`, `r report_BF_and_error(bay_ANOVA_acc_test2_s1[2])`) neither of the interaction (`r apa(ANOVA_acc_test2_s1, effect = "congruence:predictiveness")`, `r report_BF_and_error(bay_ANOVA_acc_test2_s1_int[1])`), both showing moderate bayesian evidence in favor of the null hypothesis. 
+There was not a significant effect of the Predictiveness (`r apa(ANOVA_acc_test2_s1, effect = "predictiveness")`, `r report_BF_and_error(bay_ANOVA_acc_test2_s1[1])`), with anecdotal bayesian evidence in favor of the null hypothesis; nor of congruence (`r apa(ANOVA_acc_test2_s1, effect = "congruence")`, `r report_BF_and_error(bay_ANOVA_acc_test2_s1[2])`) neither of the interaction (`r apa(ANOVA_acc_test2_s1, effect = "congruence:predictiveness")`, `r report_BF_and_error(bay_ANOVA_acc_test2_s1_int[1])`), both showing moderate bayesian evidence in favor of the null hypothesis. 
 
 ### Memory score
-
-```{r, include=FALSE}
-#plot test mem_score
-m_mem_test2_s1 <- test2_s1 %>%
-  group_by(trial_type) %>%
-  summarise(mean_mem_score = mean(mem_score, na.rm = TRUE), 
-            sd_mem_score = sd(mem_score, na.rm = TRUE)/sqrt(length(mem_score)))
-```
-```{r, echo=FALSE}
-ggplot(data = m_mem_test2_s1) +
-  geom_col(mapping = aes(x = trial_type, y = mean_mem_score)) +
-  geom_errorbar(aes(x = trial_type, y= mean_mem_score, ymin = mean_mem_score - sd_mem_score, ymax = mean_mem_score + sd_mem_score)) +
-  coord_cartesian(ylim = c(0, 10))+
-  scale_x_discrete (name = "Type of cue") +
-  scale_y_continuous(name = "Memory score") +
-  labs(title = "Mean memory score in test2 phase for very subtle test")
-```
 
 ```{r, include=FALSE}
 #t test mem_score
@@ -366,66 +258,9 @@ print(bay_ANOVA_mem_score_test2_s1_int)
 There was a significant effect of the predictiveness (`r apa(ANOVA_mem_score_test2_s1, effect = "predictiveness")`, `r report_BF_and_error(bay_ANOVA_mem_score_test2_s1[1])`), with strong bayesian evidence in favor of the alternative hypothesis. However, there was not and effect of congruence (`r apa(ANOVA_mem_score_test2_s1, effect = "congruence")`, `r report_BF_and_error(bay_ANOVA_mem_score_test2_s1[2])`) neither of the interaction (`r apa(ANOVA_mem_score_test2_s1, effect = "congruence:predictiveness")`, `r report_BF_and_error(bay_ANOVA_mem_score_test2_s1_int[1])`), both showing moderate bayesian evidence in favor of the null hypothesis.
 
 ### Corrected memory score (hits x1, erros x0)
-
-```{r, include=FALSE}
-#plot test mem_score
-c_m_mem_test2_s1 <- test2_s1 %>%
-  group_by(trial_type) %>%
-  summarise(mean_mem_score = mean(c_mem_score, na.rm = TRUE), 
-            sd_mem_score = sd(c_mem_score, na.rm = TRUE)/sqrt(length(c_mem_score)))
-```
-```{r, echo=FALSE}
-ggplot(data = c_m_mem_test2_s1) +
-  geom_col(mapping = aes(x = trial_type, y = mean_mem_score)) +
-  geom_errorbar(aes(x = trial_type, y= mean_mem_score, ymin = mean_mem_score - sd_mem_score, ymax = mean_mem_score + sd_mem_score)) +
-  coord_cartesian(ylim = c(0, 10))+
-  scale_x_discrete (name = "Type of cue") +
-  scale_y_continuous(name = "Memory score") +
-  labs(title = "Mean corrected memory score in test2 phase for very subtle test")
-```
-
 ```{r, include=FALSE}
 #t test mem_score
 c_mem_score_test2_s1 <- test2_s1 %>%
-  group_by (pNum, predictiveness, congruence) %>%
-  summarise(mem_score = mean(c_mem_score, na.rm = TRUE))
-c_mem_score_test2_s1$predictiveness <- factor(c_mem_score_test2_s1$predictiveness)
-c_mem_score_test2_s1$congruence <- factor(c_mem_score_test2_s1$congruence)
-c_mem_score_test2_s1$pNum <- factor(c_mem_score_test2_s1$pNum)
-ANOVA_c_mem_score_test2_s1 <- aov_car(formula = mem_score ~ Error(pNum*predictiveness*congruence), data = c_mem_score_test2_s1)
-print(ANOVA_c_mem_score_test2_s1)
-bay_ANOVA_c_mem_score_test2_s1 <- anovaBF(formula = mem_score ~ predictiveness + congruence + pNum,
-        data = data.frame(c_mem_score_test2_s1),
-        whichRandom = "pNum")
-print(bay_ANOVA_c_mem_score_test2_s1)
-bay_ANOVA_c_mem_score_test2_s1_int <- bay_ANOVA_c_mem_score_test2_s1[4]/bay_ANOVA_c_mem_score_test2_s1[3]
-print(bay_ANOVA_c_mem_score_test2_s1_int)
-```
-
-There was a significant effect of the predictiveness (`r apa(ANOVA_c_mem_score_test2_s1, effect = "predictiveness")`, `r report_BF_and_error(bay_ANOVA_c_mem_score_test2_s1[1])`), with extreme bayesian evidence in favor of the alternative hypothesis. However, there was not and effect of congruence (`r apa(ANOVA_c_mem_score_test2_s1, effect = "congruence")`, `r report_BF_and_error(bay_ANOVA_c_mem_score_test2_s1[2])`) neither of the interaction (`r apa(ANOVA_c_mem_score_test2_s1, effect = "congruence:predictiveness")`, `r report_BF_and_error(bay_ANOVA_c_mem_score_test2_s1_int[1])`), congruence showing moderate bayesian evidence in favor of the null hypothesis and the interaction showing anecdotal null evidence.
-
-### Corrected memory score (errors out)
-
-```{r, include=FALSE}
-#plot test2 mem_score but take out the errors
-c_test2_s1 <- filter(test2_s1, acc == 1)
-c_m_mem_test2_s1 <- c_test2_s1 %>%
-  group_by(cue_trial_type) %>%
-  summarise(mean_mem_score = mean(mem_score, na.rm = TRUE), 
-            sd_mem_score = sd(mem_score, na.rm = TRUE)/sqrt(length(mem_score)))
-```
-```{r, echo=FALSE}
-ggplot(data = c_m_mem_test2_s1) +
-  geom_col(mapping = aes(x = cue_trial_type, y = mean_mem_score)) +
-  geom_errorbar(aes(x = cue_trial_type, y= mean_mem_score, ymin = mean_mem_score - sd_mem_score, ymax = mean_mem_score + sd_mem_score)) +
-  coord_cartesian(ylim = c(0, 10))+
-  scale_x_discrete (name = "Type of cue") +
-  scale_y_continuous(name = "Memory score") +
-  labs(title = "Mean corrected memory score in test2 phase for very subtle test")
-```
-```{r, include=FALSE}
-#t test mem_score
-c_mem_score_test2_s1 <- c_test2_s1 %>%
   group_by (pNum, predictiveness, congruence) %>%
   summarise(mem_score = mean(c_mem_score, na.rm = TRUE))
 c_mem_score_test2_s1$predictiveness <- factor(c_mem_score_test2_s1$predictiveness)
@@ -448,33 +283,7 @@ There was a significant effect of the predictiveness (`r apa(ANOVA_c_mem_score_t
 ### Accuracy
 
 ```{r, include=FALSE}
-test2_s2 <- filter(test2, session == 2) %>%
-  mutate(trial_type = case_when((target == 1 & distractor_test2 == 2) | (target == 2 & distractor_test2 == 1) ~ "RP",
-                                (target == 5 & distractor_test2 == 6) | (target == 6 & distractor_test2 == 5) ~ "RNP",
-                                (target == 1 & (distractor_test2 == 5 | distractor_test2 == 6)) | (target == 2 & (distractor_test2 == 5 | distractor_test2 == 6)) ~ "FP",
-                                (target == 5 & (distractor_test2 == 1 | distractor_test2 == 2)) | (target == 6 & (distractor_test2 == 1 | distractor_test2 == 2)) ~ "FNP")) %>%
-  mutate(predictiveness = case_when(trial_type == "RP" ~ "predictive",
-                                    trial_type == "RNP"  ~ "non-predictive",
-                                    trial_type == "FP" ~ "predictive",
-                                    trial_type == "FNP" ~ "non-predictive"),
-         congruence = case_when(trial_type == "RP" ~ "congruent",
-                                    trial_type == "RNP"  ~ "congruent",
-                                    trial_type == "FP" ~ "incongruent",
-                                    trial_type == "FNP" ~ "incongruent"))
-#plot test accuracy
-m_acc_test2_s2 <- test2_s2 %>%
-  group_by(cue_trial_type) %>%
-  summarise(mean_acc = mean(acc, na.rm = TRUE), 
-            sd_acc = sd(acc, na.rm = TRUE)/sqrt(length(acc)))
-```
-```{r, echo=FALSE}
-ggplot(data = m_acc_test2_s2) +
-  geom_col(mapping = aes(x = cue_trial_type, y = mean_acc)) +
-  geom_errorbar(aes(x = cue_trial_type, y= mean_acc, ymin = mean_acc - sd_acc, ymax = mean_acc + sd_acc)) +
-  coord_cartesian(ylim = c(0, 1))+
-  scale_x_discrete (name = "Type of cue") +
-  scale_y_continuous(name = "Accuracy") +
-  labs(title = "Mean accuracy in test2 phase for subtle test")
+test2_s2 <- filter(test2, session == 2)
 ```
 ```{r, include=FALSE}
 #ANOVA mem_score
@@ -497,24 +306,6 @@ print(bay_ANOVA_acc_test2_s2_int)
 There was not a significant effect of the predictiveness (`r apa(ANOVA_acc_test2_s2, effect = "predictiveness")`, `r report_BF_and_error(bay_ANOVA_acc_test2_s2[1])`), nor of congruence (`r apa(ANOVA_acc_test2_s2, effect = "congruence")`, `r report_BF_and_error(bay_ANOVA_acc_test2_s2[2])`) neither of the interaction (`r apa(ANOVA_acc_test2_s2, effect = "congruence:predictiveness")`, `r report_BF_and_error(bay_ANOVA_acc_test2_s2_int[1])`), all showing moderate bayesian evidence in favor of the null hypothesis. 
 
 ### Memory score
-
-```{r, include=FALSE}
-#plot test mem_score
-m_mem_test2_s2 <- test2_s2 %>%
-  group_by(trial_type) %>%
-  summarise(mean_mem_score = mean(mem_score, na.rm = TRUE), 
-            sd_mem_score = sd(mem_score, na.rm = TRUE)/sqrt(length(mem_score)))
-```
-```{r, echo=FALSE}
-ggplot(data = m_mem_test2_s2) +
-  geom_col(mapping = aes(x = trial_type, y = mean_mem_score)) +
-  geom_errorbar(aes(x = trial_type, y= mean_mem_score, ymin = mean_mem_score - sd_mem_score, ymax = mean_mem_score + sd_mem_score)) +
-  coord_cartesian(ylim = c(0, 10))+
-  scale_x_discrete (name = "Type of cue") +
-  scale_y_continuous(name = "Memory score") +
-  labs(title = "Mean memory score in test2 phase for subtle test")
-```
-
 ```{r, include=FALSE}
 #t test mem_score
 mem_score_test2_s2 <- test2_s2 %>%
@@ -536,24 +327,6 @@ print(bay_ANOVA_mem_score_test2_s2_int)
 There was not significant effect of the predictiveness (`r apa(ANOVA_mem_score_test2_s2, effect = "predictiveness")`, `r report_BF_and_error(bay_ANOVA_mem_score_test2_s2[1])`), nor of congruence (`r apa(ANOVA_mem_score_test2_s2, effect = "congruence")`, `r report_BF_and_error(bay_ANOVA_mem_score_test2_s2[2])`) neither of the interaction (`r apa(ANOVA_mem_score_test2_s2, effect = "congruence:predictiveness")`, `r report_BF_and_error(bay_ANOVA_mem_score_test2_s2_int[1])`), all showing moderate bayesian evidence in favor of the null hypothesis.
 
 ### Corrected memory score (hits x1, erros x0)
-
-```{r, include=FALSE}
-#plot test mem_score
-c_m_mem_test2_s2 <- test2_s2 %>%
-  group_by(trial_type) %>%
-  summarise(mean_mem_score = mean(c_mem_score, na.rm = TRUE), 
-            sd_mem_score = sd(c_mem_score, na.rm = TRUE)/sqrt(length(c_mem_score)))
-```
-```{r, echo=FALSE}
-ggplot(data = c_m_mem_test2_s2) +
-  geom_col(mapping = aes(x = trial_type, y = mean_mem_score)) +
-  geom_errorbar(aes(x = trial_type, y= mean_mem_score, ymin = mean_mem_score - sd_mem_score, ymax = mean_mem_score + sd_mem_score)) +
-  coord_cartesian(ylim = c(0, 10))+
-  scale_x_discrete (name = "Type of cue") +
-  scale_y_continuous(name = "Memory score") +
-  labs(title = "Mean corrected memory score in test2 phase for subtle test")
-```
-
 ```{r, include=FALSE}
 #t test mem_score
 c_mem_score_test2_s2 <- test2_s2 %>%
@@ -574,77 +347,12 @@ print(bay_ANOVA_c_mem_score_test2_s2_int)
 
 There was not a significant effect of the predictiveness (`r apa(ANOVA_c_mem_score_test2_s2, effect = "predictiveness")`, `r report_BF_and_error(bay_ANOVA_c_mem_score_test2_s2[1])`), nor of congruence (`r apa(ANOVA_c_mem_score_test2_s2, effect = "congruence")`, `r report_BF_and_error(bay_ANOVA_c_mem_score_test2_s2[2])`) neither of the interaction (`r apa(ANOVA_c_mem_score_test2_s2, effect = "congruence:predictiveness")`, `r report_BF_and_error(bay_ANOVA_c_mem_score_test2_s2_int[1])`). Predictiveness showed anecdotal bayesian evidence in favor of the null hypothesis, whereas congruence and interaction showed moderate.
 
-### Corrected memory score (errors out)
-
-```{r, include=FALSE}
-#plot test2 mem_score but take out the errors
-c_test2_s2 <- filter(test2_s2, acc == 1)
-c_m_mem_test2_s2 <- c_test2_s2 %>%
-  group_by(cue_trial_type) %>%
-  summarise(mean_mem_score = mean(mem_score, na.rm = TRUE), 
-            sd_mem_score = sd(mem_score, na.rm = TRUE)/sqrt(length(mem_score)))
-```
-```{r, echo=FALSE}
-ggplot(data = c_m_mem_test2_s2) +
-  geom_col(mapping = aes(x = cue_trial_type, y = mean_mem_score)) +
-  geom_errorbar(aes(x = cue_trial_type, y= mean_mem_score, ymin = mean_mem_score - sd_mem_score, ymax = mean_mem_score + sd_mem_score)) +
-  coord_cartesian(ylim = c(0, 10))+
-  scale_x_discrete (name = "Type of cue") +
-  scale_y_continuous(name = "Memory score") +
-  labs(title = "Mean corrected memory score in test2 phase for subtle test")
-```
-```{r, include=FALSE}
-#t test mem_score
-c_mem_score_test2_s2 <- c_test2_s2 %>%
-  group_by (pNum, predictiveness, congruence) %>%
-  summarise(mem_score = mean(c_mem_score, na.rm = TRUE))
-c_mem_score_test2_s2$predictiveness <- factor(c_mem_score_test2_s2$predictiveness)
-c_mem_score_test2_s2$congruence <- factor(c_mem_score_test2_s2$congruence)
-c_mem_score_test2_s2$pNum <- factor(c_mem_score_test2_s2$pNum)
-ANOVA_c_mem_score_test2_s2 <- aov_car(formula = mem_score ~ Error(pNum*predictiveness*congruence), data = c_mem_score_test2_s2)
-print(ANOVA_c_mem_score_test2_s2)
-bay_ANOVA_c_mem_score_test2_s2 <- anovaBF(formula = mem_score ~ predictiveness + congruence + pNum,
-        data = data.frame(c_mem_score_test2_s2),
-        whichRandom = "pNum")
-print(bay_ANOVA_c_mem_score_test2_s2)
-bay_ANOVA_c_mem_score_test2_s2_int <- bay_ANOVA_c_mem_score_test2_s2[4]/bay_ANOVA_c_mem_score_test2_s2[3]
-print(bay_ANOVA_c_mem_score_test2_s2_int)
-```
-
-There was not a significant effect of the predictiveness (`r apa(ANOVA_c_mem_score_test2_s2, effect = "predictiveness")`, `r report_BF_and_error(bay_ANOVA_c_mem_score_test2_s2[1])`), with anecdotal bayesian evidence in favor of the alternative hypothesis; nor of congruence (`r apa(ANOVA_c_mem_score_test2_s2, effect = "congruence")`, `r report_BF_and_error(bay_ANOVA_c_mem_score_test2_s2[2])`), showing moderate null bayesian evidence; neither of the interaction (`r apa(ANOVA_c_mem_score_test2_s2, effect = "congruence:predictiveness")`, `r report_BF_and_error(bay_ANOVA_c_mem_score_test2_s2_int[1])`) showing anecdotal null evidence.
-
 # No subtle test
 ## Test2
 ### Accuracy
 
 ```{r, include=FALSE}
-test2_s3 <- filter(test2, session == 3) %>%
-  mutate(trial_type = case_when((target == 1 & distractor_test2 == 2) | (target == 2 & distractor_test2 == 1) ~ "RP",
-                                (target == 5 & distractor_test2 == 6) | (target == 6 & distractor_test2 == 5) ~ "RNP",
-                                (target == 1 & (distractor_test2 == 5 | distractor_test2 == 6)) | (target == 2 & (distractor_test2 == 5 | distractor_test2 == 6)) ~ "FP",
-                                (target == 5 & (distractor_test2 == 1 | distractor_test2 == 2)) | (target == 6 & (distractor_test2 == 1 | distractor_test2 == 2)) ~ "FNP")) %>%
-  mutate(predictiveness = case_when(trial_type == "RP" ~ "predictive",
-                                    trial_type == "RNP"  ~ "non-predictive",
-                                    trial_type == "FP" ~ "predictive",
-                                    trial_type == "FNP" ~ "non-predictive"),
-         congruence = case_when(trial_type == "RP" ~ "congruent",
-                                    trial_type == "RNP"  ~ "congruent",
-                                    trial_type == "FP" ~ "incongruent",
-                                    trial_type == "FNP" ~ "incongruent"))
-#plot test accuracy
-m_acc_test2_s3 <- test2_s3 %>%
-  group_by(cue_trial_type) %>%
-  summarise(mean_acc = mean(acc, na.rm = TRUE), 
-            sd_acc = sd(acc, na.rm = TRUE)/sqrt(length(acc)))
-```
-```{r, echo=FALSE}
-ggplot(data = m_acc_test2_s3) +
-  geom_col(mapping = aes(x = cue_trial_type, y = mean_acc)) +
-  geom_errorbar(aes(x = cue_trial_type, y= mean_acc, ymin = mean_acc - sd_acc, ymax = mean_acc + sd_acc)) +
-  coord_cartesian(ylim = c(0, 1))+
-  scale_x_discrete (name = "Type of cue") +
-  scale_y_continuous(name = "Accuracy") +
-  labs(title = "Mean accuracy in test2 phase for subtle test")
+test2_s3 <- filter(test2, session == 3) 
 ```
 ```{r, include=FALSE}
 #ANOVA mem_score
@@ -669,22 +377,6 @@ There was not a significant effect of the predictiveness (`r apa(ANOVA_acc_test2
 ### Memory score
 
 ```{r, include=FALSE}
-#plot test mem_score
-m_mem_test2_s3 <- test2_s3 %>%
-  group_by(trial_type) %>%
-  summarise(mean_mem_score = mean(mem_score, na.rm = TRUE), 
-            sd_mem_score = sd(mem_score, na.rm = TRUE)/sqrt(length(mem_score)))
-```
-```{r, echo=FALSE}
-ggplot(data = m_mem_test2_s3) +
-  geom_col(mapping = aes(x = trial_type, y = mean_mem_score)) +
-  geom_errorbar(aes(x = trial_type, y= mean_mem_score, ymin = mean_mem_score - sd_mem_score, ymax = mean_mem_score + sd_mem_score)) +
-  coord_cartesian(ylim = c(0, 10))+
-  scale_x_discrete (name = "Type of cue") +
-  scale_y_continuous(name = "Memory score") +
-  labs(title = "Mean memory score in test2 phase for subtle test")
-```
-```{r, include=FALSE}
 #t test mem_score
 mem_score_test2_s3 <- test2_s3 %>%
   group_by (pNum, predictiveness, congruence) %>%
@@ -707,23 +399,6 @@ There was not significant effect of the predictiveness (`r apa(ANOVA_mem_score_t
 ### Corrected memory score (hits x1, erros x0)
 
 ```{r, include=FALSE}
-#plot test mem_score
-c_m_mem_test2_s3 <- test2_s3 %>%
-  group_by(trial_type) %>%
-  summarise(mean_mem_score = mean(c_mem_score, na.rm = TRUE), 
-            sd_mem_score = sd(c_mem_score, na.rm = TRUE)/sqrt(length(c_mem_score)))
-```
-```{r, echo=FALSE}
-ggplot(data = c_m_mem_test2_s3) +
-  geom_col(mapping = aes(x = trial_type, y = mean_mem_score)) +
-  geom_errorbar(aes(x = trial_type, y= mean_mem_score, ymin = mean_mem_score - sd_mem_score, ymax = mean_mem_score + sd_mem_score)) +
-  coord_cartesian(ylim = c(0, 10))+
-  scale_x_discrete (name = "Type of cue") +
-  scale_y_continuous(name = "Memory score") +
-  labs(title = "Mean corrected memory score in test2 phase for subtle test")
-```
-
-```{r, include=FALSE}
 #t test mem_score
 c_mem_score_test2_s3 <- test2_s3 %>%
   group_by (pNum, predictiveness, congruence) %>%
@@ -742,42 +417,3 @@ print(bay_ANOVA_c_mem_score_test2_s3_int)
 ```
 
 There was not a significant effect of the predictiveness (`r apa(ANOVA_c_mem_score_test2_s3, effect = "predictiveness")`, `r report_BF_and_error(bay_ANOVA_c_mem_score_test2_s3[1])`), nor of congruence (`r apa(ANOVA_c_mem_score_test2_s3, effect = "congruence")`, `r report_BF_and_error(bay_ANOVA_c_mem_score_test2_s3[2])`) neither of the interaction (`r apa(ANOVA_c_mem_score_test2_s3, effect = "congruence:predictiveness")`, `r report_BF_and_error(bay_ANOVA_c_mem_score_test2_s3_int[1])`). All effects showed moderate bayesian evidence in favor of the null hypothesis.
-
-### Corrected memory score (errors out)
-
-```{r, include=FALSE}
-#plot test2 mem_score but take out the errors
-c_test2_s3 <- filter(test2_s3, acc == 1)
-c_m_mem_test2_s3 <- c_test2_s3 %>%
-  group_by(cue_trial_type) %>%
-  summarise(mean_mem_score = mean(mem_score, na.rm = TRUE), 
-            sd_mem_score = sd(mem_score, na.rm = TRUE)/sqrt(length(mem_score)))
-```
-```{r, echo=FALSE}
-ggplot(data = c_m_mem_test2_s3) +
-  geom_col(mapping = aes(x = cue_trial_type, y = mean_mem_score)) +
-  geom_errorbar(aes(x = cue_trial_type, y= mean_mem_score, ymin = mean_mem_score - sd_mem_score, ymax = mean_mem_score + sd_mem_score)) +
-  coord_cartesian(ylim = c(0, 10))+
-  scale_x_discrete (name = "Type of cue") +
-  scale_y_continuous(name = "Memory score") +
-  labs(title = "Mean corrected memory score in test2 phase for subtle test")
-```
-```{r, include=FALSE}
-#t test mem_score
-c_mem_score_test2_s3 <- c_test2_s3 %>%
-  group_by (pNum, predictiveness, congruence) %>%
-  summarise(mem_score = mean(c_mem_score, na.rm = TRUE))
-c_mem_score_test2_s3$predictiveness <- factor(c_mem_score_test2_s3$predictiveness)
-c_mem_score_test2_s3$congruence <- factor(c_mem_score_test2_s3$congruence)
-c_mem_score_test2_s3$pNum <- factor(c_mem_score_test2_s3$pNum)
-ANOVA_c_mem_score_test2_s3 <- aov_car(formula = mem_score ~ Error(pNum*predictiveness*congruence), data = c_mem_score_test2_s3)
-print(ANOVA_c_mem_score_test2_s3)
-bay_ANOVA_c_mem_score_test2_s3 <- anovaBF(formula = mem_score ~ predictiveness + congruence + pNum,
-        data = data.frame(c_mem_score_test2_s3),
-        whichRandom = "pNum")
-print(bay_ANOVA_c_mem_score_test2_s3)
-bay_ANOVA_c_mem_score_test2_s3_int <- bay_ANOVA_c_mem_score_test2_s3[4]/bay_ANOVA_c_mem_score_test2_s3[3]
-print(bay_ANOVA_c_mem_score_test2_s3_int)
-```
-
-There was not a significant effect of the predictiveness (`r apa(ANOVA_c_mem_score_test2_s3, effect = "predictiveness")`, `r report_BF_and_error(bay_ANOVA_c_mem_score_test2_s3[1])`), with anecdotal bayesian evidence in favor of the alternative hypothesis; nor of congruence (`r apa(ANOVA_c_mem_score_test2_s3, effect = "congruence")`, `r report_BF_and_error(bay_ANOVA_c_mem_score_test2_s3[2])`), showing moderate null bayesian evidence; neither of the interaction (`r apa(ANOVA_c_mem_score_test2_s3, effect = "congruence:predictiveness")`, `r report_BF_and_error(bay_ANOVA_c_mem_score_test2_s3_int[1])`) showing moderate null evidence.

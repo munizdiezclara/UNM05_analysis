@@ -88,9 +88,9 @@ This was a pilot experiment in which we aimed to find the most appropriate memor
 
 # All Data
 ```{r, include=FALSE}
-training <- filter(training, !participant %in% not_passed)
-test1 <- filter(test1, !participant %in% not_passed)
-test2 <- filter(test2, !participant %in% not_passed)
+training <- filter(training, !pNum %in% not_passed_pNum)
+test1 <- filter(test1, !pNum %in% not_passed_pNum)
+test2 <- filter(test2, !pNum %in% not_passed_pNum)
 
 #Code conditions
 test1 <- test1 %>%

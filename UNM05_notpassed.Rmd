@@ -11,14 +11,14 @@ library(BayesFactor)
 library(apa)
 library(emmeans)
 library("writexl")
-load("C:/Users/Clara/OneDrive - Lancaster University/Experiments/UNM05_analysis/UNM05_proc_data.RData")
+load("UNM05_proc_data.RData")
 ```
 
 ```{r}
 #Clean participants that did not pass check 2 and/or 3
-training <- filter(training, !participant %in% not_passed)
-test1 <- filter(test1, !participant %in% not_passed)
-test2 <- filter(test2, !participant %in% not_passed)
+training <- filter(training, !pNum %in% not_passed_pNum)
+test1 <- filter(test1, !pNum %in% not_passed_pNum)
+test2 <- filter(test2, !pNum %in% not_passed_pNum)
 ```
 
 

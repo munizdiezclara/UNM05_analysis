@@ -147,7 +147,7 @@ bay_ANOVA_mem_score_test1[4]/bay_ANOVA_mem_score_test1[3]
 ```
 Again, except for those that did the very subtle test, all subjects had lower accuracy for the non predictive vs the precitive targets. However, there are no significant differences and the bayesian evidence is mild.
 
-###Corrected memory score
+###Just correct ratings
 ```{r}
 #plot test mem_score but take out the errors
 c_test1 <- filter(test1, acc == 1)
@@ -185,7 +185,7 @@ print(c_bay_ANOVA_mem_score_test1)
 ```{r}
 c_bay_ANOVA_mem_score_test1[4]/c_bay_ANOVA_mem_score_test1[3]
 ```
-Again, no significant differences when memory score is corrected in test 1.
+Significant effect of predictiveness in the ratings, with anecdotal bayesian evidence in favor of the alternative.
 
 ##Test2
 ### Accuracy
@@ -269,7 +269,7 @@ bay_ANOVA_mem_score_test2[4]/bay_ANOVA_mem_score_test2[3]
 ```
 In test two, the memory score is always lower for the non-predicitive targets, and the difference is bigger the more difficult the test is. However, there are no significant differences, but predictiveness has positive (although very mild) bayesian evidence.
 
-###Corrected memory score
+###Just correct ratings
 ```{r}
 #plot test2 mem_score but take out the errors
 c_test2 <- filter(test2, acc == 1)
